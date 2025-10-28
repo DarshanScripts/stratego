@@ -138,9 +138,10 @@ celerybeat.pid
 .env
 .envrc
 .venv
-env/
+# env/
+# Since we are editing env file of Stratego game, disabled gitignore of env folder.
 venv/
-ENV/
+# ENV/
 env.bak/
 venv.bak/
 
