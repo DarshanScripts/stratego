@@ -23,7 +23,11 @@
 * Updating pip is recommended before installing with such codes: `python -m pip install --upgrade pip` or `python3 -m pip install --upgrade pip`
 * Then, install packages using `pip install -e .`
 * You can test after installing packages e.g. `stratego --p0 ollama:mistral:7b --p1 ollama:gemma3:1b --prompt base`
-* Make sure turn on your ollama client before testing. 
+    * `--p0` means setting for player 0, `--p1` means setting for player 1, `--prompt` means which prompt to use for the game.
+    * `ollama:mistral:7b` means using mistral model with 7b parameters in ollama client. You can change ollama to hf to use hugging face agent e.g. `--p0 hf:TinyLlama/TinyLlama-1.1B-Chat-v1.0`.
+* Make sure turn on your ollama client before testing, when you use ollama as LLM agent.
+* You can use `pip install -e ".[hf]"` to install additional dependencies for Hugging Face models.
+    
 
 ## Regarding Using Different Large Language Models
 

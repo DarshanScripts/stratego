@@ -1,14 +1,17 @@
 import argparse
 from stratego.env.stratego_env import StrategoEnv
-from stratego.models.ollama_model import OllamaAgent
 from stratego.prompts import get_prompt_pack
 from stratego.utils.parsing import extract_board_block_lines
 
 def build_agent(spec: str,  prompt_name: str):
     kind, name = spec.split(":", 1)
     if kind == "ollama":
+        from stratego.models.ollama_model import OllamaAgent
         return OllamaAgent(model_name=name, temperature=0.2, num_predict=32,
                            prompt_pack=get_prompt_pack(prompt_name))
+    if kind == "hf":
+        from stratego.models.hf_model import HFLocalAgent
+        return HFLocalAgent(model_id=name, prompt_pack=prompt_name)
     raise ValueError(f"Unknown agent spec: {spec}")
 
 # Later we can make printing board method as more in detail.

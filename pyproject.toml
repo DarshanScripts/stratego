@@ -9,5 +9,8 @@ dependencies = [
   "pydantic>=2",
 ]
 
+[project.optional-dependencies]
+hf = ["transformers>=4.44", "accelerate", "torch", "hf_xet"]
+
 [project.scripts]
 stratego = "stratego.main:cli"
