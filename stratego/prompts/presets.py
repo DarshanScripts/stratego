@@ -36,7 +36,16 @@ BASE = PromptPack(
 CONCISE = PromptPack(
     name="concise",
     system="Stratego agent. Output exactly one legal move like [SRC DST].",
-    guidance_template=(
+    guidance_template=( "{board_slice}\n\n"
+        "INSTRUCTIONS (CONCISE):\n"
+        "- Pick exactly ONE move from 'Available Moves:'.\n"
+        "- Never pick moves under 'FORBIDDEN'.\n"
+        "- If multiple are equivalent, prefer (in order): capture > safe advance > reposition.\n"
+        "- Output ONLY the move as [SRC DST] with no extra text.\n"
+        "- Do not explain, justify, or comment on your choice. "
+         "- Do not output anything else (no punctuation, no text, no newlines)."
+        "- If no legal moves exist, output [PASS]."
+
     ),
 )
 
@@ -46,9 +55,24 @@ ADAPTIVE = PromptPack(
         "You are an expert Stratego agent. Consider captures, threats, and safe advancement.\n"
         "Output exactly one legal move [SRC DST]."
     ),
-    guidance_template=(
+    guidance_template=("{board_slice}\n\n"
+        "INSTRUCTIONS (ADAPTIVE):\n"
+        "- Choose ONE move from 'Available Moves:' only (never from 'FORBIDDEN').\n"
+        "- Evaluate each candidate using these priorities (in order):\n"
+        " TACTICAL GAINS: Guaranteed favorable capture (win by rank or Miner vs Bomb).\n"
+        " SAFETY: Prefer moves ending on squares not capturable next turn by KNOWN/INFERRED enemy.\n"
+        " MISSION ROLES: Scouts to probe/open lanes; Miners toward suspected bombs; Spy only to attack the Marshal by initiating; protect own Flag sector.\n"
+        " SPACE & PRESSURE: Advance pieces that increase central control or threaten valuable targets without overexposing high ranks.\n"
+        " INFORMATION: When no safe gain exists, prefer low-risk scouting over revealing high ranks.\n"
+        "- Tie-breakers (apply in order):\n"
+        "  Highest expected material gain this turn.\n"
+        "  Lowest immediate recapture risk.\n"
+        "  Improves mobility/lines (opens files, avoids lakes/choke).\n"
+        "  If still tied, choose the lexicographically first [SRC DST].\n"
+        "- Output ONLY the selected move in format [SRC DST]. No commentary.\n"
     ),
 )
+    
 
 _REGISTRY: Dict[str, PromptPack] = {
     BASE.name: BASE,
