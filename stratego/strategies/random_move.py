@@ -1,6 +1,10 @@
 import random
 from typing import List
 from .base import Strategy
+
 class RandomStrategy(Strategy):
-    def choose(self, legal_moves: List[str], observation: str) -> str:
-        return random.choice(legal_moves) if legal_moves else ""
+    def get_context(self) -> str:
+        return "Play randomly: mix offensive and defensive moves unpredictably."
+
+    def choose(self, legal_moves, observation):
+        return random.choice(legal_moves)
