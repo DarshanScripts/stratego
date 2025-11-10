@@ -1,5 +1,6 @@
 import argparse
-from stratego.env.stratego_env import StrategoEnv
+#updated import statement
+from stratego_env_1 import StrategoEnv
 from stratego.models.ollama_model import OllamaAgent
 from stratego.prompts import get_prompt_pack
 from stratego.utils.parsing import extract_board_block_lines
