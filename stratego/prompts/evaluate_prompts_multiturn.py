@@ -82,7 +82,7 @@ def evaluate_prompts_multiturn(model: str, num_rounds=5):
     boards = generate_board_slices(num_rounds)
     scores = {p.name: [] for p in PROMPTS}
 
-    print(f"\n🏁 Starting evaluation on {num_rounds} rounds with model: {model}\n")
+    print(f"\n Starting evaluation on {num_rounds} rounds with model: {model}\n")
 
     for round_idx, board_slice in enumerate(boards, start=1):
         available, forbidden = extract_moves(board_slice)
@@ -97,16 +97,16 @@ def evaluate_prompts_multiturn(model: str, num_rounds=5):
             print(f"→ {pack.name.upper():<10} | Move: {move:<10} | Valid: {valid}")
 
     # --- Résumé global ---
-    print("\n📊 === FINAL RESULTS ===")
+    print("\n === FINAL RESULTS ===")
     for name, result_list in scores.items():
         avg = statistics.mean(result_list)
         print(f"{name.capitalize():<10}: {sum(result_list)}/{len(result_list)} valid moves ({avg*100:.1f}%)")
 
     best_prompt = max(scores.items(), key=lambda x: statistics.mean(x[1]))[0]
-    print(f"\n🏆 Best performing prompt: {best_prompt.upper()}")
+    print(f"\n Best performing prompt: {best_prompt.upper()}")
     return scores
 
 
 # --- Lancer le test ---
-if __name__ == "__main__":
-    evaluate_prompts_multiturn("gemma:2b", num_rounds=5)
+#if __name__ == "__main__":
+   # evaluate_prompts_multiturn("gemma:2b", num_rounds=5)
