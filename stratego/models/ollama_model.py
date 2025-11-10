@@ -45,13 +45,20 @@ class OllamaAgent(AgentLike):
             "num_predict": kwargs.pop("num_predict", 24),
             **kwargs,
         }
+        
+        print("🚀 Connecting to Ollama at:", base_url)
         self.client = ChatOllama(model=model_name, base_url=base_url, model_kwargs=model_kwargs)
 
     # Run one LLM call
     def _llm_once(self, prompt: str) -> str:
+        # ✂️ limităm promptul la 1200 caractere (modelele mici se blochează la prompturi mari)
+        prompt = prompt[:1200]
+        print("🧠 Sending to Ollama:\n", prompt[:400], "...\n")  # vezi ce se trimite
         msgs = [SystemMessage(content=self.system_prompt), HumanMessage(content=prompt)]
         out = self.client.invoke(msgs)
-        return strip_think((out.content or "").strip())
+        print("🧠 Ollama raw output:", getattr(out, "content", None))
+        return (getattr(out, "content", "") or "").strip()
+
 
     # Main decision method
     def __call__(self, observation: str) -> str:
@@ -61,25 +68,30 @@ class OllamaAgent(AgentLike):
 
         forbidden = set(extract_forbidden(observation))
         legal_filtered = [m for m in legal_moves if m not in forbidden] or legal_moves[:]
-        slim = slice_board_and_moves(observation)
-        prompt_context = self.prompt_pack.guidance(slim)
+        prompt_context = observation
 
-        # 🧠 Strategy context (important!)
+
+        # Strategy context 
         strategy_context = self.strategy.get_context()
 
-        # 🧩 Combine everything into the LLM prompt
+        # Combine everything into the LLM prompt
         final_prompt = (
-            f"You are playing Stratego.\n"
-            f"Strategy Context: {strategy_context}\n\n"
-            f"Game State:\n{prompt_context}\n\n"
-            f"Available legal moves:\n{', '.join(legal_filtered)}\n\n"
-            f"Now, based on this strategy and the board, choose your next move.\n"
-            f"Respond with ONLY one legal move from the list above, e.g. 'A2 B3'."
+            "You are playing Stratego. Each move is written as '[FROM] [TO]' "
+            "(for example 'A0 A1' means move the piece from A0 to A1).\n\n"
+            f"Current player strategy: {strategy_context}\n\n"
+            "BOARD (rows labeled A, B, C...; columns labeled 0,1,2,...):\n"
+            f"{observation}\n\n"
+            f"LEGAL MOVES (choose one exactly as written):\n{', '.join(legal_filtered)}\n\n"
+            "Your task: choose ONE legal move from the list above. "
+            "Do NOT explain your reasoning, only reply with the move itself (e.g. 'B2 B3')."
         )
+
 
         # Try several times until we get a valid move
         for _ in range(4):
             raw = self._llm_once(final_prompt)
+
+
             m = MOVE_RE.search(raw)
             if m:
                 mv = m.group(0)
