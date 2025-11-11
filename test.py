@@ -1,4 +1,5 @@
 from typing import List
+from stratego.prompts.presets import get_prompt_pack
 import textarena as ta 
 from vllm import LLM
 from vllmModel import VLLMAgent
@@ -22,23 +23,23 @@ def print_board(observation: str):
     if block:
         print("\n".join(block))
 
-llm1 = LLM(model="Qwen/Qwen3-0.6B",
+llm1 = LLM(model="openai/gpt-oss-20b",
     trust_remote_code=True,
     dtype="bfloat16",
     tensor_parallel_size=1,
-    gpu_memory_utilization=0.15
+    gpu_memory_utilization=0.32
     )
 
 llm2 = LLM(model="Qwen/Qwen3-0.6B",
     trust_remote_code=True,
     dtype="bfloat16",
     tensor_parallel_size=1,
-    gpu_memory_utilization=0.15
+    gpu_memory_utilization=0.18
     )
 
 agents = {
-    0: VLLMAgent(llm1),
-    1: VLLMAgent(llm2)
+    0: VLLMAgent(llm1, prompt_pack=get_prompt_pack("base")),
+    1: VLLMAgent(llm2, prompt_pack=get_prompt_pack("base"))
 }
 
 # initialize the environment

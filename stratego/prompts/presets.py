@@ -13,19 +13,21 @@ class PromptPack:
 
 BASE = PromptPack(
     name="base",
-    # This is what original STANDARD_GAME_PROMPT from main code was.
     system=(
-        "You are a competitive Stratego-playing agent.\n"
-        "Strictly follow the rules. Output exactly ONE legal move in the format [SRC DST] "
-        "and nothing else."
+        "You are a Stratego-playing agent.\n"
+        "You MUST output exactly ONE move and NOTHING ELSE.\n"
+        "The move MUST be in the format [A0 B0].\n"
+        "The move MUST be one of the legal moves listed under 'Available Moves:'.\n"
     ),
-    # This is guidance prompt from main code.
     guidance_template=(
         "{board_slice}\n\n"
-        "INSTRUCTIONS:\n"
-        "- Choose exactly ONE move that appears in 'Available Moves:' above.\n"
-        "- Do NOT choose any move listed under FORBIDDEN (if present).\n"
-        "- Output ONLY the move in format [A0 B0]. No other text.\n"
+        "RULES:\n"
+        "- Use ONLY the moves listed in 'Available Moves:'.\n"
+        "- Output exactly one move in the format [A0 B0].\n"
+        "- No commentary. No extra spaces or lines.\n"
+        "- If multiple moves seem good, choose any ONE of them.\n"
+        "\n"
+        "ANSWER:\n"
     ),
 )
 
