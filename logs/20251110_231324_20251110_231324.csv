@@ -1,0 +1,6 @@
+game_id,timestamp,type,player,model_name,role,prompt,turn,move,from,to,outcome,captured,board_after,meta_json
+20251110_231324,2025-11-10T23:13:24,prompt,0,gemma3:270m,initial,"You are a competitive Stratego-playing agent.
+Strictly follow the rules. Output exactly ONE legal move in the format [SRC DST] and nothing else.",,,,,,,,
+20251110_231324,2025-11-10T23:13:24,prompt,1,qwen2.5:0.5b,initial,"You are a competitive Stratego-playing agent.
+Strictly follow the rules. Output exactly ONE legal move in the format [SRC DST] and nothing else.",,,,,,,,
+20251110_231324,2025-11-10T23:13:43,move,0,gemma3:270m,,,0,D1 G1,,,,,,

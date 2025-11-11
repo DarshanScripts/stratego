@@ -1,8 +1,12 @@
+from stratego.prompt_optimizer import improve_prompt
+import os
 import argparse
 from stratego.env.stratego_env import StrategoEnv
 from stratego.models.ollama_model import OllamaAgent
 from stratego.prompts import get_prompt_pack
 from stratego.utils.parsing import extract_board_block_lines
+
+from stratego.game_logger import GameLogger
 
 def build_agent(spec: str,  prompt_name: str):
     kind, name = spec.split(":", 1)
@@ -20,8 +24,8 @@ def print_board(observation: str):
 # With those arguments, user can change game setting
 def cli():
     p = argparse.ArgumentParser()
-    p.add_argument("--p0", default="ollama:mistral:7b")
-    p.add_argument("--p1", default="ollama:gemma:2b")
+    p.add_argument("--p0", default="ollama:gemma3:270m")
+    p.add_argument("--p1", default="ollama:qwen2.5:0.5b")
     p.add_argument("--prompt", default="base", help="Prompt preset name (e.g. base|concise|adaptive)")
     p.add_argument("--env_id", default="Stratego-v0", help="TextArena environment id")
     args = p.parse_args()
@@ -43,8 +47,40 @@ def cli():
 
         done, _ = env.step(action=action)
 
+        done = False
+        turn = 0
+        max_turns = 10
+        while not done and turn < max_turns:
+            player_id, observation = env.get_observation()
+            print_board(observation)
+
+            action = agents[player_id](observation)
+            print(f"{agents[player_id].model_name} -> {action}")
+            print(turn)
+
+            done, _ = env.step(action=action)
+
+            logger.log_move(turn=turn,
+                                player=player_id,
+                                model_name=getattr(agents[player_id], "model_name", "unknown"),
+                                move=action)
+                                # outcome=outcome,
+                                # board_after=board_after)
+
+            turn += 1
     rewards, game_info = env.close()
     print("Game finished.", rewards, game_info)
+    
+    num_games = len([f for f in os.listdir(args.log_dir) if f.endswith(".csv")])
+    if num_games % 3 == 0:
+        print("🔄 Running prompt improvement based on recent games...")
+        from stratego.prompt_optimizer import improve_prompt
+        improve_prompt("logs", "stratego/prompts/current_prompt.txt", model_name="mistral:7b")
+
 
 if __name__ == "__main__":
     cli()
+    # num_games = len([f for f in os.listdir("logs") if f.endswith(".csv")])
+    # if num_games % 1 == 0:
+    #     print("🔄 Running prompt improvement based on recent games...")
+    #     improve_prompt("logs", "stratego/prompts/current_prompt.txt", model_name="gemma3:270m")

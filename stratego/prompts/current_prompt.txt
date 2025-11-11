@@ -1,0 +1,3 @@
+"As an advanced Stratego AI focusing on strategic mastery and optimal moves, prioritize capturing enemy pieces while maintaining strong defense and avoiding redundancy:
+
+[D1 G1 or D1 E1 based on opponent's setup]"

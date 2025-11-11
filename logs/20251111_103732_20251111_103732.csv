@@ -1,0 +1,17 @@
+game_id,timestamp,type,player,model_name,role,prompt,turn,move,from,to,outcome,captured,board_after,meta_json
+20251111_103732,2025-11-11T10:37:32,prompt,0,gemma3:270m,initial,"""As an advanced Stratego AI committed to strategic excellence on this battlefield of wits, I observe a pattern that has led us into unnecessary repetition and suboptimal capture scenarios. My analysis reveals opportunities for enhanced tactical maneuvers which not only prioritize capturing enemy pieces but also offer better defensive positioning while avoiding redundancy in our plays:
+
+[D1 E2] (This move represents a strategic advancement towards the right side of my formation, aimed at engaging with opponent's weaker ranks and fortifying defense against potential threats.)""",,,,,,,,
+20251111_103732,2025-11-11T10:37:32,prompt,1,qwen2.5:0.5b,initial,"""As an advanced Stratego AI committed to strategic excellence on this battlefield of wits, I observe a pattern that has led us into unnecessary repetition and suboptimal capture scenarios. My analysis reveals opportunities for enhanced tactical maneuvers which not only prioritize capturing enemy pieces but also offer better defensive positioning while avoiding redundancy in our plays:
+
+[D1 E2] (This move represents a strategic advancement towards the right side of my formation, aimed at engaging with opponent's weaker ranks and fortifying defense against potential threats.)""",,,,,,,,
+20251111_103732,2025-11-11T10:38:18,move,0,gemma3:270m,,,0,D5 G5,,,,,,
+20251111_103732,2025-11-11T10:38:58,move,1,qwen2.5:0.5b,,,1,G8 F8,,,,,,
+20251111_103732,2025-11-11T10:39:45,move,0,gemma3:270m,,,2,D4 D5,,,,,,
+20251111_103732,2025-11-11T10:40:32,move,1,qwen2.5:0.5b,,,3,G4 F4,,,,,,
+20251111_103732,2025-11-11T10:41:20,move,0,gemma3:270m,,,4,D1 E1,,,,,,
+20251111_103732,2025-11-11T10:42:04,move,1,qwen2.5:0.5b,,,5,G3 G4,,,,,,
+20251111_103732,2025-11-11T10:42:51,move,0,gemma3:270m,,,6,D3 D4,,,,,,
+20251111_103732,2025-11-11T10:43:33,move,1,qwen2.5:0.5b,,,7,G2 G3,,,,,,
+20251111_103732,2025-11-11T10:44:21,move,0,gemma3:270m,,,8,D5 E5,,,,,,
+20251111_103732,2025-11-11T10:45:02,move,1,qwen2.5:0.5b,,,9,G0 F0,,,,,,

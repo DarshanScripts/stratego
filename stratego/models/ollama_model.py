@@ -3,6 +3,9 @@ from typing import Optional
 from langchain_ollama import ChatOllama
 from langchain_core.messages import SystemMessage, HumanMessage
 
+import requests
+import json
+
 from .base import AgentLike
 from ..utils.parsing import (
     extract_legal_moves, extract_forbidden, slice_board_and_moves, strip_think, MOVE_RE
@@ -28,6 +31,22 @@ class OllamaAgent(AgentLike):
 
         self.system_prompt = system_prompt if system_prompt is not None else self.prompt_pack.system
 
+
+
+        if system_prompt is not None:
+            self.system_prompt = system_prompt
+        else:
+            # dacă există un prompt actualizat, îl folosim
+            prompt_path = os.path.join(os.path.dirname(__file__), "..", "prompts", "current_prompt.txt")
+            if os.path.exists(prompt_path):
+                with open(prompt_path, "r", encoding="utf-8") as f:
+                    self.system_prompt = f.read()
+            else:
+                self.system_prompt = self.prompt_pack.system
+                
+                
+        self.initial_prompt = self.system_prompt
+
         base_url = host or os.getenv("OLLAMA_HOST", "http://localhost:11434")
         model_kwargs = {
             "temperature": kwargs.pop("temperature", 0.1),
@@ -39,9 +58,26 @@ class OllamaAgent(AgentLike):
         self.client = ChatOllama(model=model_name, base_url=base_url, model_kwargs=model_kwargs)
 
     def _llm_once(self, prompt: str) -> str:
-        msgs = [SystemMessage(content=self.system_prompt), HumanMessage(content=prompt)]
-        out = self.client.invoke(msgs)
-        return strip_think((out.content or "").strip())
+        """Send request directly to Ollama REST API (fixes Windows LangChain bug)."""
+        try:
+            response = requests.post(
+                "http://localhost:11434/api/generate",
+                json={
+                    "model": self.model_name,
+                    "prompt": prompt,
+                    "stream": False
+                },
+                timeout=300
+            )
+            if response.status_code == 200:
+                data = response.json()
+                return (data.get("response") or "").strip()
+            else:
+                print(f"⚠️ Ollama returned HTTP {response.status_code}: {response.text}")
+                return ""
+        except Exception as e:
+            print("❌ Ollama request failed:", e)
+            return ""
 
     def __call__(self, observation: str) -> str:
         legal = extract_legal_moves(observation)
