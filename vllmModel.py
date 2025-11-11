@@ -1,3 +1,5 @@
+from typing import Optional
+from stratego.utils.parsing import slice_board_and_moves, strip_think
 import textarena as ta 
 from vllm import LLM, SamplingParams
 
@@ -13,23 +15,27 @@ except ImportError:
         def __call__(self, observation: str) -> str:
             raise NotImplementedError
 
+from stratego.prompts import PromptPack, get_prompt_pack
+
 class VLLMAgent(Agent):
-    def __init__(self, llm: LLM, max_new_tokens: int = 64):
+    def __init__(self, llm: LLM, max_new_tokens: int = 64, prompt_pack: Optional[PromptPack | str] = None):
         self.llm = llm
         self.sampling_params = SamplingParams(
             temperature=0.7,
             top_p=0.9,
             max_tokens=max_new_tokens,
         )
+        if isinstance(prompt_pack, str) or prompt_pack is None:
+            self.prompt_pack: PromptPack = get_prompt_pack(prompt_pack)
+        else:
+            self.prompt_pack = prompt_pack
 
+        self.system_prompt = STANDARD_GAME_PROMPT if STANDARD_GAME_PROMPT is not None else self.prompt_pack.system
+    
     def __call__(self, observation: str) -> str:
-        guidance_template=(
-            "INSTRUCTIONS:\n"
-            "- Choose exactly ONE move that appears in 'Available Moves:' above.\n"
-            "- Do NOT choose any move listed under FORBIDDEN (if present).\n"
-            "- Output ONLY the move in format [A0 B0]. No other text.\n"
-        )
-        prompt = STANDARD_GAME_PROMPT + "\n" + guidance_template + observation
+        slim = slice_board_and_moves(observation)
+        guidance = self.prompt_pack.guidance(slim)
+        prompt = self.system_prompt + "\n" + guidance + observation
         outputs = self.llm.generate([prompt], self.sampling_params)
         text = outputs[0].outputs[0].text.strip()
         line = text.splitlines()[0].strip()

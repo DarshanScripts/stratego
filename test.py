@@ -22,15 +22,23 @@ def print_board(observation: str):
     if block:
         print("\n".join(block))
 
-llm = LLM(model="openai/gpt-oss-20b",
+llm1 = LLM(model="Qwen/Qwen3-0.6B",
     trust_remote_code=True,
     dtype="bfloat16",
-    tensor_parallel_size=1
+    tensor_parallel_size=1,
+    gpu_memory_utilization=0.15
+    )
+
+llm2 = LLM(model="Qwen/Qwen3-0.6B",
+    trust_remote_code=True,
+    dtype="bfloat16",
+    tensor_parallel_size=1,
+    gpu_memory_utilization=0.15
     )
 
 agents = {
-    0: VLLMAgent(llm),
-    1: VLLMAgent(llm)
+    0: VLLMAgent(llm1),
+    1: VLLMAgent(llm2)
 }
 
 # initialize the environment
