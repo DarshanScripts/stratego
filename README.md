@@ -27,7 +27,25 @@
     * `ollama:mistral:7b` means using mistral model with 7b parameters in ollama client. You can change ollama to hf to use hugging face agent e.g. `--p0 hf:TinyLlama/TinyLlama-1.1B-Chat-v1.0`.
 * Make sure turn on your ollama client before testing, when you use ollama as LLM agent.
 * You can use `pip install -e ".[hf]"` to install additional dependencies for Hugging Face models.
-    
+
+## Important Things for Cache Problem in SSH Server
+* First of all please use your own user name of TU Clausthal in {user}. Do followings in bash terminal, not in -bin/tsch terminal.
+* Please make sure that you are in directory, `scratch/{user}` in the terminal
+* `mkdir -p vs_cache` for creating VS code cache directory.
+* `mkdir -p hf_cache` for creating Hugging Face cache directory.
+* `mkdir -p pip_cache` for creating pip cache directory.
+* `export VSCODE_SERVER_CACHE=/scratch/{user}/vs_cache` to set new saving place for the VS code cache.
+* `export HF_HOME=/scratch/{user}/hf_cache` to set new saving place for the Hugging Face cache.
+* `export HUGGINGFACE_HUB_CACHE=/scratch/{user}/hf_cache` to set new saving place for the Hugging Face Hub cache.
+* `export TRANSFORMERS_CACHE=/scratch/{user}/hf_cache` to set new saving place for the Transformers cache.
+* `export HF_DATASETS_CACHE=/scratch/{user}/hf_cache` to set new saving place for the Hugging Face Datasets cache.
+* `export PIP_CACHE_DIR=/scratch/{user}/pip_cache` to set new saving place for the pip cache.
+* Or you have another option to change the saving directory forcefully:
+    * `nano ~/.cshrc` to open new cshrc file editor to redirect the cache files.
+    * `setenv HF_HOME /scratch/{user}/hf_cache` write this way for all caches above each lines.
+    * Then Ctrl+X to exit the edit program and save it.
+* Make sure, to remove the cache directory which is in the directory of `/home/{user}`. You can delete it with `rm -r .cache`
+* After all, you have to restart VS Code to apply changes.
 
 ## Regarding Using Different Large Language Models
 

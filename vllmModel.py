@@ -5,6 +5,7 @@ try:
     from textarena.agents.basic_agents import STANDARD_GAME_PROMPT
 except ImportError:
     STANDARD_GAME_PROMPT = "You are playing Stratego. You MUST respond ONLY with a valid move in the format [A0 B0]."
+
 try:
     from textarena.agents.basic_agents import Agent
 except ImportError:
@@ -22,7 +23,13 @@ class VLLMAgent(Agent):
         )
 
     def __call__(self, observation: str) -> str:
-        prompt = STANDARD_GAME_PROMPT + "\n" + observation
+        guidance_template=(
+            "INSTRUCTIONS:\n"
+            "- Choose exactly ONE move that appears in 'Available Moves:' above.\n"
+            "- Do NOT choose any move listed under FORBIDDEN (if present).\n"
+            "- Output ONLY the move in format [A0 B0]. No other text.\n"
+        )
+        prompt = STANDARD_GAME_PROMPT + "\n" + guidance_template + observation
         outputs = self.llm.generate([prompt], self.sampling_params)
         text = outputs[0].outputs[0].text.strip()
         line = text.splitlines()[0].strip()
