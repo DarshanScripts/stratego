@@ -16,8 +16,8 @@
         * `python -m venv .venv`
         * `.\\.venv\Scripts\activate.bat`
     * MacOS / Linux
-        * `python3 -m venv .venv`
-        * `source .venv/bin/activate`
+        * `python3 -m venv .venv --without-pip`
+        * `source .venv/bin/activate.csh`
 * If venv is successfully working, you could see (.venv) infront of your Terminal lines.
 * You can deactivate virtual environment everytime with writing `deactivate`.
 * Updating pip is recommended before installing with such codes: `python -m pip install --upgrade pip` or `python3 -m pip install --upgrade pip`
