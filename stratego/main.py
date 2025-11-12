@@ -3,7 +3,7 @@ from stratego.env.stratego_env import StrategoEnv
 from stratego.models.ollama_model import OllamaAgent
 from stratego.prompts import get_prompt_pack
 from stratego.utils.parsing import extract_board_block_lines
-from stratego.logging import GameLogger
+from stratego.utils.logging import GameLogger
 
 def build_agent(spec: str,  prompt_name: str):
     kind, name = spec.split(":", 1)
@@ -25,7 +25,7 @@ def cli():
     p.add_argument("--p1", default="ollama:gemma:2b")
     p.add_argument("--prompt", default="base", help="Prompt preset name (e.g. base|concise|adaptive)")
     p.add_argument("--env_id", default="Stratego-v0", help="TextArena environment id")
-    p.add_argument("--log-dir", default="logs", help="Directory for per-game CSV logs")
+    p.add_argument("--log-dir", default="stratego/logs", help="Directory for per-game CSV logs")
     p.add_argument("--game-id", default=None, help="Optional custom game id in CSV filename")
     args = p.parse_args()
 
