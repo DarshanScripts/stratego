@@ -5,7 +5,6 @@ from stratego.env.stratego_env import StrategoEnv
 from stratego.models.ollama_model import OllamaAgent
 from stratego.prompts import get_prompt_pack
 from stratego.utils.parsing import extract_board_block_lines
-
 from stratego.game_logger import GameLogger
 
 def build_agent(spec: str,  prompt_name: str):
@@ -24,10 +23,12 @@ def print_board(observation: str):
 # With those arguments, user can change game setting
 def cli():
     p = argparse.ArgumentParser()
-    p.add_argument("--p0", default="ollama:gemma3:270m")
-    p.add_argument("--p1", default="ollama:qwen2.5:0.5b")
+    p.add_argument("--p0", default="ollama:phi3:3.8b")
+    p.add_argument("--p1", default="ollama:gemma3:1b")
     p.add_argument("--prompt", default="base", help="Prompt preset name (e.g. base|concise|adaptive)")
     p.add_argument("--env_id", default="Stratego-v0", help="TextArena environment id")
+    p.add_argument("--log-dir", default="logs", help="Directory for per-game CSV logs")
+    p.add_argument("--game-id", default=None, help="Optional custom game id in CSV filename")
     args = p.parse_args()
 
     agents = {
@@ -37,15 +38,17 @@ def cli():
     env = StrategoEnv(env_id=args.env_id)
     env.reset(num_players=2)
 
-    done = False
-    while not done:
-        player_id, observation = env.get_observation()
-        print_board(observation)
-
-        action = agents[player_id](observation)
-        print(f"{agents[player_id].model_name} -> {action}")
-
-        done, _ = env.step(action=action)
+    with GameLogger(out_dir=args.log_dir, game_id=args.game_id) as logger:
+        for pid in (0, 1):
+            if hasattr(agents[pid], "logger"):
+                agents[pid].logger = logger
+                agents[pid].player_id = pid
+            initial = getattr(agents[pid], "initial_prompt", None)
+            if initial:
+                logger.log_prompt(player=pid,
+                                  model_name=getattr(agents[pid], "model_name", "unknown"),
+                                  prompt=initial,
+                                  role="initial")
 
         done = False
         turn = 0

@@ -1,5 +1,64 @@
 [
   {
+    "file": "20251112_171537_20251112_171537.csv",
+    "models": {
+      "0": "phi3:3.8b",
+      "1": "gemma3:1b"
+    },
+    "initial_prompts": {
+      "0": "\"\"\"As an advanced Stratego AI focusing on strategic mastery and optimal moves",
+      "1": "\"\"\"As an advanced Stratego AI focusing on strategic mastery and optimal moves"
+    },
+    "num_moves": 10,
+    "example_moves": [
+      "[D1 E1]",
+      "[G8 F8]",
+      "[C1 D1]",
+      "[G4 F4]",
+      "[C2 C1]",
+      "[G9 F9]",
+      "[C3 C2]",
+      "[G0 E0]",
+      "[C4 C3]",
+      "[G1 G0]"
+    ]
+  },
+  {
+    "file": "20251112_171502_20251112_171502.csv",
+    "models": {
+      "0": "phi3:3.8b",
+      "1": "gemma3:1b"
+    },
+    "initial_prompts": {
+      "0": "\"\"\"As an advanced Stratego AI focusing on strategic mastery and optimal moves",
+      "1": "\"\"\"As an advanced Stratego AI focusing on strategic mastery and optimal moves"
+    },
+    "num_moves": 0,
+    "example_moves": []
+  },
+  {
+    "file": "20251111_113407_20251111_113407.csv",
+    "models": {
+      "0": "gemma3:270m",
+      "1": "qwen2.5:0.5b"
+    },
+    "initial_prompts": {
+      "0": "\"\"\"As an advanced Stratego AI focusing on strategic mastery and optimal moves",
+      "1": "\"\"\"As an advanced Stratego AI focusing on strategic mastery and optimal moves"
+    },
+    "num_moves": 8,
+    "example_moves": [
+      "D0 E0",
+      "G5 F5",
+      "D1 E1",
+      "G4 D4",
+      "E1 D1",
+      "H4 G4",
+      "C0 D0",
+      "G9 F9"
+    ]
+  },
+  {
     "file": "20251111_104658_20251111_104658.csv",
     "models": {
       "0": "gemma3:270m",
@@ -48,195 +107,18 @@
     ]
   },
   {
-    "file": "20251111_102728_20251111_102728.csv",
+    "file": "20251110_231324_20251110_231324.csv",
     "models": {
       "0": "gemma3:270m",
       "1": "qwen2.5:0.5b"
     },
     "initial_prompts": {
-      "0": "\"\"\"As an advanced Stratego AI committed to strategic excellence on this battlefield of wits",
-      "1": "\"\"\"As an advanced Stratego AI committed to strategic excellence on this battlefield of wits"
+      "0": "\"You are a competitive Stratego-playing agent.",
+      "1": "\"You are a competitive Stratego-playing agent."
     },
-    "num_moves": 10,
+    "num_moves": 1,
     "example_moves": [
-      "D1 E1",
-      "G8 F8",
-      "D2 D1",
-      "G7 G8",
-      "C2 D2",
-      "F8 E8",
-      "D5 E5",
-      "G1 F1",
-      "B2 C2",
-      "H1 G1"
-    ]
-  },
-  {
-    "file": "20251111_100305_20251111_100305.csv",
-    "models": {
-      "0": "gemma3:270m",
-      "1": "qwen2.5:0.5b"
-    },
-    "initial_prompts": {
-      "0": "\"As an expert Stratego agent",
-      "1": "\"As an expert Stratego agent"
-    },
-    "num_moves": 10,
-    "example_moves": [
-      "D1 E1",
-      "G8 F8",
-      "D8 E8",
-      "G7 G8",
-      "E8 F8",
-      "F8 F9",
-      "D2 D1",
-      "G4 F4",
-      "D4 E4",
-      "F4 E4"
-    ]
-  },
-  {
-    "file": "20251111_095528_20251111_095528.csv",
-    "models": {
-      "0": "gemma3:270m",
-      "1": "qwen2.5:0.5b"
-    },
-    "initial_prompts": {
-      "0": "\"As an expert Stratego agent",
-      "1": "\"As an expert Stratego agent"
-    },
-    "num_moves": 10,
-    "example_moves": [
-      "D0 E0",
-      "G8 E8",
-      "D5 E5",
-      "G1 F1",
-      "E0 D0",
-      "F1 E1",
-      "D4 E4",
-      "E1 D1",
-      "D3 D4",
-      "E8 F8"
-    ]
-  },
-  {
-    "file": "20251111_094627_20251111_094627.csv",
-    "models": {
-      "0": "gemma3:270m",
-      "1": "qwen2.5:0.5b"
-    },
-    "initial_prompts": {
-      "0": "\"As an expert Stratego agent",
-      "1": "\"As an expert Stratego agent"
-    },
-    "num_moves": 10,
-    "example_moves": [
-      "D5 E5",
-      "G9 F9",
-      "D4 D5",
-      "G1 F1",
-      "D9 E9",
-      "F9 G9",
-      "D3 D4",
-      "F1 E1",
-      "E5 E4",
-      "H1 F1"
-    ]
-  },
-  {
-    "file": "20251111_030834_20251111_030834.csv",
-    "models": {
-      "0": "gemma3:270m",
-      "1": "qwen2.5:0.5b"
-    },
-    "initial_prompts": {
-      "0": "\"\"\"You are an expert Stratego agent.\\\\nAnalyze the board carefully and prioritize capturing opponent's pieces or defending your own while avoiding repetitive moves.\\\\nOutput exactly one legal move in format [SRC DST].\"\"\"",
-      "1": "\"\"\"You are an expert Stratego agent.\\\\nAnalyze the board carefully and prioritize capturing opponent's pieces or defending your own while avoiding repetitive moves.\\\\nOutput exactly one legal move in format [SRC DST].\"\"\""
-    },
-    "num_moves": 10,
-    "example_moves": [
-      "D8 F8",
-      "G5 F5",
-      "C8 D8",
-      "G4 G5",
-      "C7 C8",
-      "G1 E1",
-      "C6 C7",
-      "G2 G1",
-      "D9 E9",
-      "G1 F1"
-    ]
-  },
-  {
-    "file": "20251111_030521_20251111_030521.csv",
-    "models": {
-      "0": "gemma3:270m",
-      "1": "qwen2.5:0.5b"
-    },
-    "initial_prompts": {
-      "0": "\"\"\"You are an expert Stratego agent.\\\\nAnalyze the board carefully and prioritize capturing opponent's pieces or defending your own while avoiding repetitive moves.\\\\nOutput exactly one legal move in format [SRC DST].\"\"\"",
-      "1": "\"\"\"You are an expert Stratego agent.\\\\nAnalyze the board carefully and prioritize capturing opponent's pieces or defending your own while avoiding repetitive moves.\\\\nOutput exactly one legal move in format [SRC DST].\"\"\""
-    },
-    "num_moves": 10,
-    "example_moves": [
-      "D4 E4",
-      "G4 F4",
-      "D5 D4",
-      "G5 D5",
-      "D9 E9",
-      "G3 G4",
-      "C5 D5",
-      "G4 G3",
-      "E4 F4",
-      "G0 F0"
-    ]
-  },
-  {
-    "file": "20251111_030134_20251111_030134.csv",
-    "models": {
-      "0": "gemma3:270m",
-      "1": "qwen2.5:0.5b"
-    },
-    "initial_prompts": {
-      "0": "\"\"\"You are an expert Stratego agent.\\\\nAnalyze the board carefully and prioritize capturing opponent's pieces or defending your own while avoiding repetitive moves.\\\\nOutput exactly one legal move in format [SRC DST].\"\"\"",
-      "1": "\"\"\"You are an expert Stratego agent.\\\\nAnalyze the board carefully and prioritize capturing opponent's pieces or defending your own while avoiding repetitive moves.\\\\nOutput exactly one legal move in format [SRC DST].\"\"\""
-    },
-    "num_moves": 10,
-    "example_moves": [
-      "D0 F0",
-      "G4 D4",
-      "F0 E0",
-      "G5 E5",
-      "D1 E1",
-      "G6 G4",
-      "D8 E8",
-      "G0 F0",
-      "D5 E5",
-      "G4 G6"
-    ]
-  },
-  {
-    "file": "20251111_015717_20251111_015717.csv",
-    "models": {
-      "0": "gemma3:270m",
-      "1": "qwen2.5:0.5b"
-    },
-    "initial_prompts": {
-      "0": "\"You are an expert Stratego agent.",
-      "1": "\"You are an expert Stratego agent."
-    },
-    "num_moves": 10,
-    "example_moves": [
-      "D8 F8",
-      "G1 F1",
-      "D4 G4",
-      "F1 E1",
-      "D1 E1",
-      "E1 F1",
-      "D2 D1",
-      "G8 F8",
-      "D9 E9",
-      "F1 G1"
+      "D1 G1"
     ]
   }
 ]

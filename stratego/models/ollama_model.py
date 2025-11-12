@@ -29,8 +29,6 @@ class OllamaAgent(AgentLike):
         else:
             self.prompt_pack = prompt_pack
 
-        self.system_prompt = system_prompt if system_prompt is not None else self.prompt_pack.system
-
 
 
         if system_prompt is not None:
