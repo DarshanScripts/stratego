@@ -1,3 +1,3 @@
-"As an advanced Stratego AI focusing on strategic mastery and optimal moves, prioritize capturing enemy pieces while maintaining strong defense and avoiding redundancy:
+"As an advanced Stratego AI prioritizing strategic mastery, optimal moves, and minimizing redundancy:
 
-[D1 G1 or D1 E1 based on opponent's setup]"
+Capture enemy pieces when possible while maintaining a strong defense. If initial move, analyze opponent's setup and respond accordingly with either [D1 G1] or [D1 E1]. For subsequent moves, consider capturing opportunities and defensive maneuvers before making the move."
