@@ -29,8 +29,6 @@ def cli():
     p.add_argument("--env_id", default="Stratego-v0", help="TextArena environment id")
     p.add_argument("--log-dir", default="logs", help="Directory for per-game CSV logs")
     p.add_argument("--game-id", default=None, help="Optional custom game id in CSV filename")
-    p.add_argument("--log-dir", default="logs", help="Directory for per-game CSV logs")
-    p.add_argument("--game-id", default=None, help="Optional custom game id in CSV filename")
     args = p.parse_args()
 
     agents = {
@@ -40,17 +38,6 @@ def cli():
     env = StrategoEnv(env_id=args.env_id)
     env.reset(num_players=2)
 
-    with GameLogger(out_dir=args.log_dir, game_id=args.game_id) as logger:
-        for pid in (0, 1):
-            if hasattr(agents[pid], "logger"):
-                agents[pid].logger = logger
-                agents[pid].player_id = pid
-            initial = getattr(agents[pid], "initial_prompt", None)
-            if initial:
-                logger.log_prompt(player=pid,
-                                  model_name=getattr(agents[pid], "model_name", "unknown"),
-                                  prompt=initial,
-                                  role="initial")
     with GameLogger(out_dir=args.log_dir, game_id=args.game_id) as logger:
         for pid in (0, 1):
             if hasattr(agents[pid], "logger"):
