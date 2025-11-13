@@ -29,6 +29,7 @@ def cli():
     p.add_argument("--env_id", default="Stratego-v0", help="TextArena environment id")
     p.add_argument("--log-dir", default="logs", help="Directory for per-game CSV logs")
     p.add_argument("--game-id", default=None, help="Optional custom game id in CSV filename")
+
     args = p.parse_args()
 
     agents = {
@@ -52,7 +53,7 @@ def cli():
 
         done = False
         turn = 0
-        max_turns = 10
+        max_turns = 100
         while not done and turn < max_turns:
             player_id, observation = env.get_observation()
             print_board(observation)
@@ -76,14 +77,10 @@ def cli():
     
     num_games = len([f for f in os.listdir(args.log_dir) if f.endswith(".csv")])
     if num_games % 3 == 0:
-        print("🔄 Running prompt improvement based on recent games...")
+        print("Running prompt improvement based on recent games...")
         from stratego.prompt_optimizer import improve_prompt
         improve_prompt("logs", "stratego/prompts/current_prompt.txt", model_name="mistral:7b")
 
 
 if __name__ == "__main__":
     cli()
-    # num_games = len([f for f in os.listdir("logs") if f.endswith(".csv")])
-    # if num_games % 1 == 0:
-    #     print("🔄 Running prompt improvement based on recent games...")
-    #     improve_prompt("logs", "stratego/prompts/current_prompt.txt", model_name="gemma3:270m")

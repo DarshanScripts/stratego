@@ -10,6 +10,7 @@ from .base import AgentLike
 from ..utils.parsing import (
     extract_legal_moves, extract_forbidden, slice_board_and_moves, strip_think, MOVE_RE
 )
+
 # I seperated Prompts from the code
 from ..prompts import PromptPack, get_prompt_pack
 
@@ -34,7 +35,7 @@ class OllamaAgent(AgentLike):
         if system_prompt is not None:
             self.system_prompt = system_prompt
         else:
-            # dacă există un prompt actualizat, îl folosim
+            # if there is already an existing updated prompt, we use that one
             prompt_path = os.path.join(os.path.dirname(__file__), "..", "prompts", "current_prompt.txt")
             if os.path.exists(prompt_path):
                 with open(prompt_path, "r", encoding="utf-8") as f:
