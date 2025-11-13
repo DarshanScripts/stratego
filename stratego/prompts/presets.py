@@ -71,13 +71,30 @@ ADAPTIVE = PromptPack(
         "  If still tied, choose the lexicographically first [SRC DST].\n"
         "- Output ONLY the selected move in format [SRC DST]. No commentary.\n"
     ),
+
 )
-    
+
+AGGRESSIVE = PromptPack(
+    name="aggressive",
+    system=(
+        "You are an aggressive Stratego agent focused on capturing opponent pieces quickly.\n"
+        "Output exactly one legal move [SRC DST]."
+    ),
+    guidance_template=("{board_slice}\n\n"
+        "INSTRUCTIONS (AGGRESSIVE):\n" 
+         "INSTRUCTIONS (choose exactly one move):\n"
+        "1) If any Available Move captures an opponent piece, choose the capture that removes the highest-ranking opponent piece.\n"
+        "2) Otherwise choose a move that reduces Manhattan distance to the opponent's Flag or moves your front line forward.\n"
+        "3) Avoid moves that recreate a previous board position twice in a row; prefer the second-best legal move in that case.\n"
+        "Output EXACTLY one move in format [A0 B0] and nothing else."),
+
+)
 
 _REGISTRY: Dict[str, PromptPack] = {
     BASE.name: BASE,
     CONCISE.name: CONCISE,
     ADAPTIVE.name: ADAPTIVE,
+    AGGRESSIVE.name: AGGRESSIVE
 }
 
 def get_prompt_pack(name: str | None) -> PromptPack:
