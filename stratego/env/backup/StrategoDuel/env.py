@@ -478,7 +478,7 @@ class StrategoDuelEnv(ta.Env):
         determine which player has no more pieces that are not bombs or flags.
         """
         for player in range(2):
-            if all([self.board[row][col]['rank'] in ['Bomb', 'Flag'] for row, col in self.player_pieces[player]]):
+            if all(self.board[row][col] is not None and self.board[row][col]['rank'] in ['Bomb', 'Flag'] for row, col in self.player_pieces[player]):
                 return 1 - player
         return None
     
