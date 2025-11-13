@@ -23,7 +23,7 @@ class GameLogger:
                 # prompts
                 "player","model_name","role","prompt",
                 # moves
-                "turn","move","from","to","outcome","captured","board_after",
+                "turn","move","from","to","piece_type","outcome","captured","was_repeated","board_after",
                 # freeform
                 "meta_json",
             ],
@@ -49,8 +49,10 @@ class GameLogger:
             "move": "",
             "from": "",
             "to": "",
+            "piece_type": "",
             "outcome": "",
             "captured": "",
+            "was_repeated": "",
             "board_after": "",
             "meta_json": "",
         })
@@ -64,8 +66,10 @@ class GameLogger:
         model_name: str = "",
         src: str = "",
         dst: str = "",
+        piece_type: str = "",
         outcome: str = "",
         captured: str = "",
+        was_repeated: bool = False,
         board_after: str = "",
     ):
         self._writer.writerow({
@@ -73,7 +77,6 @@ class GameLogger:
             "timestamp": self._now(),
             "type": "move",
             "player": player,
-            "model_name": "",
             "model_name": model_name,
             "role": "",
             "prompt": "",
@@ -81,8 +84,10 @@ class GameLogger:
             "move": move,
             "from": src,
             "to": dst,
+            "piece_type": piece_type,
             "outcome": outcome,
             "captured": captured,
+            "was_repeated": "yes" if was_repeated else "no",
             "board_after": board_after,
             "meta_json": "",
         })
