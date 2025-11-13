@@ -22,6 +22,7 @@
 * You can deactivate virtual environment everytime with writing `deactivate`.
 * Updating pip is recommended before installing with such codes: `python -m pip install --upgrade pip` or `python3 -m pip install --upgrade pip`
 * Then, install packages using `pip install -e .`
+* After a successful installation, you can use commands just like `stratego` and `stratego-install-env`, which paste the environment files of Stratego Duel and register it in textarena folder of your .venv folder.
 * You can test after installing packages e.g. `stratego --p0 ollama:mistral:7b --p1 ollama:gemma3:1b --prompt base`
     * `--p0` means setting for player 0, `--p1` means setting for player 1, `--prompt` means which prompt to use for the game.
     * `ollama:mistral:7b` means using mistral model with 7b parameters in ollama client. You can change ollama to hf to use hugging face agent e.g. `--p0 hf:TinyLlama/TinyLlama-1.1B-Chat-v1.0`.
@@ -51,8 +52,25 @@
 * First of all, please be sure clean all of powershells.
 * Open a VS Code for connecting ssh server of TU-Clausthal. Since we use cloud-247, you can use as `ssh -L 11437:localhost:11437 {user}@cloud-247.rz.tu-clausthal.de`. Please enter your password of TU-Clausthal account.
 * If your login is successful, it means, you are connected to the ssh server of TU-Clausthal in port of 11437, which we used to open the Ollama server.
-* To open Ollama server on your own, you have to install ollama in your virtual environment of your ssh directory.
+* If you want to open Ollama server on your own, you have to install Ollama in your virtual environment of your ssh directory.
+    * `mkdir -p /scratch/{user}/ollama_bin` to make a directory to store Ollama binary files.
+    * `mkdir -p /scratch/{user}/ollama_model` to make a directory to store Ollama model files.
+    * `mkdir -p /scratch/{user}/ollama_tmp` to make a directory to store tmp files.
+    * `cd /scratch/{user}/ollama_bin`
+    * `curl -L https://ollama.com/download/ollama-linux-amd64.tgz -o ollama.tgz`
+    * `tar -xzf ollama.tgz` to download Ollama client from its website in ollama_bin and launch.
+    * `ln -sf /scratch/{user}/ollama_bin/bin/ollama /scratch/{user}/ollama_bin/ollama` to make a binary file of Ollama, which you can launch with `ollama` command. 
+    * `export OLLAMA_MODELS=/scratch/{user}/ollama_model`
+    * `export OLLAMA_TMPDIR=/scratch/{user}/ollama_tmp`
+    * `export OLLAMA_HOST=0.0.0.0:{your_host}`
+    * `export PATH="/scratch/{user}/ollama_bin:$PATH"` to set paths for running Ollama.
+    * `/scratch/{user}/ollama_bin/ollama serve` to start the server.
+* Once you are connected to Ollama running server, then you can with this command `curl -s http://127.0.0.1:{your_host}/api/tags` to check what kind of LLMs are available now in the server.
+* `curl -X POST http://127.0.0.1:{your_host}/api/pull -H 'Content-Type: application/json' -d '{"name":"{model_name}"}'` Use this command to request the server to download such LLM which are supported by Ollama.
+* Those curl commands does not fully function or need extra words if you are going to run those in Powershell, so just open another terminal with Linux(you can use Ubuntu as well), connect to ssh -L, and execute those curl commands, for checking and pulling LLMs.
+* You can kill the server with `kill $(cat /scratch/{user}/ollama_serve.pid)` or `pkill -f "/scratch/{user}/ollama_bin/ollama serve"`.
 
 ## Regarding Using Different Large Language Models
 
-* Write down your insights...
+* If you want to use big LLMs, then make sure, that you are not going to run the game in ssh connected VS Code direclty; it causes freezing problem, because of big usage of GPU of the TU-Calusthal's server. So, pleas run the game local VS Code, but make sure one of the terminal of the VS Code is connected to your own ssh env.
+* If you use big, such as gpt-oss:120b, around 40~50 GB of GPU of the TU-Clausthal's would be taken, which freezes your VS Code terminal. To solve this, you have to find the running task of your own with command, `ps -u {user} -o pid,rss,vsz,cmd --sort -rss` and kill the PID of the task. Probably it is the largest rss one.
