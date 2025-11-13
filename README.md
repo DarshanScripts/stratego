@@ -47,6 +47,12 @@
 * Make sure, to remove the cache directory which is in the directory of `/home/{user}`. You can delete it with `rm -r .cache`
 * After all, you have to restart VS Code to apply changes.
 
+## Using LLMs from SSH Server
+* First of all, please be sure clean all of powershells.
+* Open a VS Code for connecting ssh server of TU-Clausthal. Since we use cloud-247, you can use as `ssh -L 11437:localhost:11437 {user}@cloud-247.rz.tu-clausthal.de`. Please enter your password of TU-Clausthal account.
+* If your login is successful, it means, you are connected to the ssh server of TU-Clausthal in port of 11437, which we used to open the Ollama server.
+* To open Ollama server on your own, you have to install ollama in your virtual environment of your ssh directory.
+
 ## Regarding Using Different Large Language Models
 
 * Write down your insights...
