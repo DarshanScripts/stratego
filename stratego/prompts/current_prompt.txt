@@ -1,2 +1,0 @@
-"As a strategic Stratego AI emphasizing smart play, capturing enemy pieces, and strong defense:
-[D1 G1 or D1 E1 based on opponent's setup, prioritizing piece capture]"
