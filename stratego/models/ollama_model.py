@@ -29,7 +29,7 @@ class OllamaAgent(AgentLike):
         self.system_prompt = system_prompt if system_prompt is not None else self.prompt_pack.system
         self.initial_prompt = self.system_prompt
 
-        base_url = host or os.getenv("OLLAMA_HOST", "http://localhost:11434")
+        base_url = host or os.getenv("OLLAMA_HOST", "http://localhost:11437")
         model_kwargs = {
             "temperature": kwargs.pop("temperature", 0.1),
             "top_p": kwargs.pop("top_p", 0.9),
