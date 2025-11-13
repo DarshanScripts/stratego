@@ -122,4 +122,4 @@ Output exactly one legal move in the format [SRC DST]."""
 
 # Direct execution
 if __name__ == "__main__":
-    improve_prompt("./stratego/logs", "stratego/prompts/current_prompt.txt", model_name="mistral:7b")
+    improve_prompt("logs/games", "stratego/prompts/current_prompt.txt", model_name="mistral:7b")
