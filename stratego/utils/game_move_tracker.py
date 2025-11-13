@@ -60,12 +60,17 @@ class GameMoveTracker:
     def to_prompt_string(self, player_id: int) -> str:
         """
         Return a clean string that summarizes the match so far.
-        No secret info, no piece identities, only moves + events.
-        You append this AFTER the board slice in the LLM prompt.
+        Keeps ONLY the last 20 moves to avoid loops.
         """
 
         if not self.history:
             return "No previous moves have been played.\n"
+
+        # ➤ KEEP ONLY LAST 20 ENTRIES
+        MAX_HISTORY = 20
+        if len(self.history) > MAX_HISTORY:
+            # delete oldest until only 20 remain
+            self.history = self.history[-MAX_HISTORY:]
 
         lines = ["Game History (most recent last):"]
 
@@ -96,3 +101,4 @@ class GameMoveTracker:
             lines.append(prefix)
 
         return "\n".join(lines) + "\n"
+
