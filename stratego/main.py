@@ -1,5 +1,5 @@
 import argparse
-from stratego.utils import GameMoveTracker
+from stratego.utils import game_move_tracker
 from stratego.env.stratego_env import StrategoEnv
 from stratego.prompts import get_prompt_pack
 from stratego.utils.parsing import extract_board_block_lines
@@ -25,7 +25,7 @@ def print_board(observation: str):
 
 # With those arguments, user can change game setting
 def cli():
-    tracker = GameMoveTracker()
+    tracker = game_move_tracker.GameMoveTracker()
     p = argparse.ArgumentParser()
     p.add_argument("--p0", default="ollama:llama3.2:1b")
     p.add_argument("--p1", default="ollama:llama3.1:8b")
@@ -73,7 +73,7 @@ def cli():
 
             action = agents[player_id](observation)
             print(f"{agents[player_id].model_name} -> {action}")
-            print(turn)
+            print(f"Turn: {turn}")
 
             done, info = env.step(action=action)
 
