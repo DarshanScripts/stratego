@@ -1,7 +1,9 @@
 from stratego.prompt_optimizer import improve_prompt
 import os
 import argparse
-from stratego.env.stratego_env import StrategoEnv
+#from stratego.env.stratego_env import StrategoEnv
+from stratego.env.stratego_env import CustomStrategoEnv as StrategoEnv
+
 from stratego.models.ollama_model import OllamaAgent
 from stratego.prompts import get_prompt_pack
 from stratego.utils.parsing import extract_board_block_lines
@@ -29,6 +31,8 @@ def cli():
     p.add_argument("--env_id", default="Stratego-v0", help="TextArena environment id")
     p.add_argument("--log-dir", default="logs", help="Directory for per-game CSV logs")
     p.add_argument("--game-id", default=None, help="Optional custom game id in CSV filename")
+    p.add_argument("--size", type=int, default=10, help="Board size NxN")
+
 
     args = p.parse_args()
 
@@ -36,7 +40,7 @@ def cli():
         0: build_agent(args.p0, args.prompt),
         1: build_agent(args.p1, args.prompt),
     }
-    env = StrategoEnv(env_id=args.env_id)
+    env = StrategoEnv(size=args.size)
     env.reset(num_players=2)
     
     # Simple move history tracker (separate for each player)
@@ -57,7 +61,7 @@ def cli():
         done = False
         turn = 1
         max_turns = 10
-        while not done and turn < max_turns:
+        while not done and turn <= max_turns:
             player_id, observation = env.get_observation()
             print_board(observation)
             
