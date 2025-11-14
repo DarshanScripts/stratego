@@ -10,29 +10,79 @@ def load_last_games(log_dir: str, limit: int = 10):
     for path in csv_files[:limit]:
         with open(path, "r", encoding="utf-8") as f:
             lines = f.readlines()
-        moves = [ln.strip().split(",") for ln in lines if ln.startswith(tuple("202"))]
+        
+        # Parse CSV properly
+        import csv
+        with open(path, "r", encoding="utf-8") as f:
+            reader = csv.DictReader(f)
+            rows = list(reader)
 
         models = {}
         prompts = {}
         example_moves = []
+        detailed_moves = []
+        invalid_moves = []
+        repeated_moves = []
+        piece_usage = {}
+        battle_results = {"won": 0, "lost": 0, "draw": 0}
 
-        for parts in moves:
-            if len(parts) < 4:
-                continue
-            if parts[2] == "prompt":
-                player, model = parts[3], parts[4]
-                text = parts[6]
+        for row in rows:
+            if row.get("type") == "prompt":
+                player = row.get("player")
+                model = row.get("model_name")
+                text = row.get("prompt", "")
                 prompts[player] = text
                 models[player] = model
-            elif parts[2] == "move" and len(example_moves) < 10:
-                example_moves.append(parts[8])
+            elif row.get("type") == "move":
+                move = row.get("move", "")
+                piece_type = row.get("piece_type", "")
+                outcome = row.get("outcome", "")
+                captured = row.get("captured", "")
+                was_repeated = row.get("was_repeated", "no")
+                
+                if len(example_moves) < 10:
+                    example_moves.append(move)
+                
+                detailed_moves.append({
+                    "move": move,
+                    "piece": piece_type,
+                    "outcome": outcome,
+                    "captured": captured,
+                    "repeated": was_repeated
+                })
+                
+                if outcome == "invalid":
+                    invalid_moves.append({"piece": piece_type, "move": move})
+                
+                if was_repeated == "yes":
+                    repeated_moves.append({"piece": piece_type, "move": move})
+                
+                if piece_type:
+                    piece_usage[piece_type] = piece_usage.get(piece_type, 0) + 1
+                
+                if "won" in outcome:
+                    battle_results["won"] += 1
+                elif "lost" in outcome:
+                    battle_results["lost"] += 1
+                elif "draw" in outcome:
+                    battle_results["draw"] += 1
 
+        total_moves = len([m for m in detailed_moves if m.get("outcome")])
         games.append({
             "file": os.path.basename(path),
             "models": models,
             "initial_prompts": prompts,
-            "num_moves": len([m for m in moves if len(m) > 2 and m[2] == "move"]),
-            "example_moves": example_moves
+            "num_moves": total_moves,
+            "example_moves": example_moves,
+            "detailed_moves": detailed_moves[:10],  # First 10 for analysis
+            "invalid_count": len(invalid_moves),
+            "invalid_rate": len(invalid_moves) / max(total_moves, 1),
+            "repeated_count": len(repeated_moves),
+            "repeat_rate": len(repeated_moves) / max(total_moves, 1),
+            "piece_usage": piece_usage,
+            "battle_results": battle_results,
+            "invalid_moves": invalid_moves[:5],  # Top 5 for analysis
+            "repeated_moves": repeated_moves[:5]
         })
     return games
 
@@ -61,6 +111,31 @@ def improve_prompt(log_dir: str, output_path: str, model_name: str = "mistral:7b
     # Creates the instance for the llm model
     llm = OllamaAgent(model_name=model_name)
 
+    # Analyze common issues across games
+    total_invalid = sum(g.get("invalid_count", 0) for g in games)
+    total_repeated = sum(g.get("repeated_count", 0) for g in games)
+    avg_invalid_rate = sum(g.get("invalid_rate", 0) for g in games) / max(len(games), 1)
+    avg_repeat_rate = sum(g.get("repeat_rate", 0) for g in games) / max(len(games), 1)
+    
+    # Collect common mistake patterns
+    all_invalid = []
+    all_repeated = []
+    for g in games:
+        all_invalid.extend(g.get("invalid_moves", []))
+        all_repeated.extend(g.get("repeated_moves", []))
+    
+    issue_summary = f"""
+### STATISTICS FROM LAST {len(games)} GAMES:
+- Average Invalid Move Rate: {avg_invalid_rate*100:.1f}%
+- Average Repeat Move Rate: {avg_repeat_rate*100:.1f}%
+- Total Invalid Moves: {total_invalid}
+- Total Repeated Moves: {total_repeated}
+
+### COMMON MISTAKES:
+Invalid Moves: {json.dumps(all_invalid[:5], indent=2)}
+Repeated Moves: {json.dumps(all_repeated[:5], indent=2)}
+"""
+
     # Creates the prompt for the llm
     analysis_prompt = f"""
 You are a Stratego prompt optimizer AI responsible for refining the Stratego-playing agent's system prompt.
@@ -70,33 +145,38 @@ Below is the current system prompt:
 {old_prompt}
 ---
 
-Here are summaries of the last {len(games)} games (models, moves, prompts, outcomes, and any identified issues):
-{json.dumps(games, indent=2)[:4000]}
+{issue_summary}
+
+Here are detailed summaries of the last {len(games)} games:
+{json.dumps(games, indent=2)[:3000]}
 ---
 
 Your task:
-- Produce a single improved Stratego system prompt that keeps the correct game rules, especially:
-  * Orthogonal one-square movement (no diagonals)
-  * Scouts (9) move any number of squares in a straight line
-  * Bombs (B) and Flags (F) are immobile
-  * Spy (1) can defeat Marshal (10) only if the Spy attacks
-  * Miner (3) defuses Bombs
-- Reinforce the output contract: output **exactly one legal move** in the format `[SRC DST]` and **nothing else**.
-- Strengthen adaptive strategic reasoning:
-  * Prioritize smart captures, cautious defense, and minimizing repetition.
-  * Balance offense and defense; protect key pieces while seeking high-value captures.
-  * Learn from previous moves and avoid repetitive back-and-forth sequences.
-- If multiple moves are possible, prefer those that yield long-term advantage (positional or informational).
-- Include clear rules, strategy, and output format sections in the final text.
-- Keep the language concise and instructional.
-- Return **only** the new improved Stratego system prompt text in single line format using \n (no JSON, no commentary, no extra lines outside the prompt).
-- Add the problems found in the previous prompt to be fixed in the new prompt. Add them below in the "Known Issues" section.
+- DO NOT rewrite or replace the current prompt entirely.
+- Instead, carefully **append or modify** sections of the old prompt only where logically needed.
+- Preserve all original sections, wordings, and formatting of old_prompt.
+- Append new clarifications or improvements **after** the existing text in a section called "Prompt Enhancements:".
+- Keep every original rule intact (do not delete or reword existing ones).
+- Add any new fixes only at the end under "Prompt Enhancements:" followed by numbered improvements.
+- Focus on fixing the specific issues identified in the statistics above.
+- If certain pieces (like Bombs) generate many invalid moves, add explicit rules about them.
+- If repeated moves are common, add stronger warnings against repeating recent moves.
+- Never remove or reformat the old prompt content.
+- Keep all \n as literal line breaks for readability.
+- The final output must contain:
+  1. The full old prompt text (unchanged)
+  2. An added "Prompt Enhancements:" section containing:
+     - fixes for known issues from recent games
+     - any additional clarity or constraints to improve performance
+- Output exactly the final updated prompt text, no commentary or explanation.
+- Return in a single text block (no JSON).
 
-Known Issues with the current prompt:
-1. Some games showed repetitive move patterns leading to stalemates.
+Prompt Enhancements:
+1. Address the {avg_invalid_rate*100:.1f}% invalid move rate with explicit rules.
+2. Reduce the {avg_repeat_rate*100:.1f}% repeat rate by emphasizing move diversity.
+3. Add specific tactical advice based on piece usage patterns.
 
-Output strictly:
-A single coherent Stratego system prompt ready to be used by the game-playing LLM.
+
 """
 
 
@@ -112,7 +192,7 @@ Prefer moves that capture or pressure enemy pieces.
 Output exactly one legal move in the format [SRC DST]."""
 
     # Writes the final prompt
-    with open(output_path, "w", encoding="utf-8") as f:
+    with open(output_path, "a", encoding="utf-8") as f:
         f.write(improved.strip())
 
     print("Prompt updated successfully.\n")
@@ -122,4 +202,4 @@ Output exactly one legal move in the format [SRC DST]."""
 
 # Direct execution
 if __name__ == "__main__":
-    improve_prompt("./stratego/logs", "stratego/prompts/current_prompt.txt", model_name="mistral:7b")
+    improve_prompt("logs", "stratego/prompts/current_prompt.txt", model_name="phi3:14b")

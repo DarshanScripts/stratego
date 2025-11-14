@@ -55,6 +55,14 @@ class OllamaAgent(AgentLike):
             **kwargs,
         }
         self.client = ChatOllama(model=model_name, base_url=base_url, model_kwargs=model_kwargs)
+        
+        # Simple move history tracking
+        self.move_history = []
+        self.player_id = None
+
+    def set_move_history(self, history):
+        """Set the recent move history for this agent."""
+        self.move_history = history
 
     def _llm_once(self, prompt: str) -> str:
         """Send request directly to Ollama REST API (fixes Windows LangChain bug)."""
@@ -72,10 +80,10 @@ class OllamaAgent(AgentLike):
                 data = response.json()
                 return (data.get("response") or "").strip()
             else:
-                print(f"⚠️ Ollama returned HTTP {response.status_code}: {response.text}")
+                print(f"Ollama returned HTTP {response.status_code}: {response.text}")
                 return ""
         except Exception as e:
-            print("❌ Ollama request failed:", e)
+            print(f"Ollama request failed: {e}")
             return ""
 
     def __call__(self, observation: str) -> str:
@@ -86,13 +94,50 @@ class OllamaAgent(AgentLike):
         forbidden = set(extract_forbidden(observation))
         legal_filtered = [m for m in legal if m not in forbidden] or legal[:]
         slim = slice_board_and_moves(observation)
-        guidance = self.prompt_pack.guidance(slim)
+        base_guidance = self.prompt_pack.guidance(slim)
+        
+        # Build move history section for prompt
+        history_text = ""
+        if self.move_history:
+            history_text = "\n\nYOUR RECENT MOVES:\n"
+            for entry in self.move_history[-5:]:  # Last 5 moves
+                history_text += f"   • {entry['text']}\n"
+            
+            # Check for immediate repeat
+            if len(self.move_history) >= 1:
+                last_move = self.move_history[-1]["move"]
+                history_text += f"\nDO NOT repeat your last move: {last_move}\n"
+            
+            # Check for alternating pattern (A-B-A)
+            if len(self.move_history) >= 3:
+                moves = [m["move"] for m in self.move_history[-3:]]
+                if moves[0] == moves[2]:
+                    history_text += f"AVOID alternating pattern: {moves[0]} ↔ {moves[1]}\n"
+            
+            history_text += "\nChoose a DIFFERENT move that advances your strategy.\n"
+        
+        guidance = base_guidance + history_text
 
-        for _ in range(4):
+        # Get moves to avoid (recent history)
+        recent_moves = set()
+        if len(self.move_history) >= 2:
+            recent_moves = {m["move"] for m in self.move_history[-2:]}
+        
+        for attempt in range(4):
             raw = self._llm_once(guidance)
             m = MOVE_RE.search(raw)
             if m:
                 mv = m.group(0)
+                
+                # Check if it's a repeat of recent move
+                if mv in recent_moves and len(recent_moves) > 0:
+                    # Filter out recent moves from legal options
+                    non_repeat_moves = [lm for lm in legal_filtered if lm not in recent_moves]
+                    if non_repeat_moves:
+                        print(f"   LLM proposed recent move {mv}, trying alternatives...")
+                        legal_filtered = non_repeat_moves
+                        continue
+                
                 if mv in legal_filtered:
                     return mv
 
