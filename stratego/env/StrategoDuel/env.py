@@ -4,6 +4,24 @@ from typing import Optional, Dict, Tuple, List, Any
 import textarena as ta
 
 class StrategoDuelEnv(ta.Env):
+    # """ A two-player implementation of the board game Stratego """
+    # def __init__(self):
+    #     """
+    #     Initialize the environment.
+    #     """
+    #     ## set up the board items
+    #     self.piece_counts = {
+    #         'Flag': 1, 'Bomb': 2, 'Spy': 1, 'Scout': 2, 'Miner': 2,
+    #         'General': 1, 'Marshal': 1
+    #     }
+    #     self.piece_ranks = {
+    #         'Flag': 0, 'Bomb': 11, 'Spy': 1, 'Scout': 2, 'Miner': 3,
+    #         'General': 9, 'Marshal': 10
+    #     }
+    #     self.lakes = [(4, 2), (4, 3), (5, 2), (5, 3), (4, 6), (4, 7), (5, 6), (5, 7)]
+    #     self.player_pieces = {0: [], 1: []}
+    #     self.board = [[None for _ in range(10)] for _ in range(10)]
+
     """ A two-player implementation of the board game Stratego """
     def __init__(self):
         """
@@ -18,9 +36,9 @@ class StrategoDuelEnv(ta.Env):
             'Flag': 0, 'Bomb': 11, 'Spy': 1, 'Scout': 2, 'Miner': 3,
             'General': 9, 'Marshal': 10
         }
-        self.lakes = [(4, 2), (4, 3), (5, 2), (5, 3), (4, 6), (4, 7), (5, 6), (5, 7)]
+        self.lakes = [(2, 2), (2, 3), (3, 2), (3, 3)]
         self.player_pieces = {0: [], 1: []}
-        self.board = [[None for _ in range(10)] for _ in range(10)]
+        self.board = [[None for _ in range(6)] for _ in range(6)]
 
     @property
     def terminal_render_keys(self):
@@ -29,6 +47,8 @@ class StrategoDuelEnv(ta.Env):
     def reset(self, num_players: int, seed: Optional[int]=None):
         """ Reset the environment to start a new game """
         self.state = ta.TwoPlayerState(num_players=num_players, seed=seed)
+        # (13 Nov 2025) New Comment : reset the turn counter at the start of a new game.
+        self.turn_count = 0
         
         ## populate the board
         self.board = self._populate_board()
@@ -143,6 +163,13 @@ class StrategoDuelEnv(ta.Env):
                                     (isinstance(target, dict) and target['player'] != player_id)):
                                     available_moves.append(f"[{chr(row + 65)}{col} {chr(new_row + 65)}{new_col}]")
 
+
+        # new comment(13 Nov 2025) Store the number of available moves in the game state.
+        # This is critical for detecting a "no moves remaining" loss or a stalemate/draw.
+        num_available_moves = len(available_moves)
+        self.state.game_state[f'available_moves_p{player_id}'] = num_available_moves
+
+        #Previous code lines for the observation message
         self.state.add_observation(
             message=f"Current Board:\n\n{self._render_board(player_id=player_id, full_board=False)}\nAvailable Moves: " + ", ".join(available_moves),
             observation_type=ta.ObservationType.GAME_BOARD
@@ -154,14 +181,14 @@ class StrategoDuelEnv(ta.Env):
         """
         for player in range(2):
             # Define rows for each player
-            back_rows = range(0, 2) if player == 0 else range(8, 10)
-            front_rows = range(2, 4) if player == 0 else range(7, 9)
-            all_rows = range(0, 4) if player == 0 else range(6, 10)
+            back_rows = range(0, 2) if player == 0 else range(3, 5)
+            front_rows = range(2, 4) if player == 0 else range(2, 4)
+            all_rows = range(0, 4) if player == 0 else range(3, 5)
 
             # Place the Flag strategically
             while True:
                 row = random.choice(back_rows)
-                col = random.randint(0, 9)
+                col = random.randint(0, 5)
                 if (row, col) not in self.lakes and self.board[row][col] is None:
                     self.board[row][col] = {'rank': 'Flag', 'player': player}
                     self.player_pieces[player].append((row, col))
@@ -173,7 +200,7 @@ class StrategoDuelEnv(ta.Env):
             bomb_positions = [
                 (flag_position[0] + dr, flag_position[1] + dc)
                 for dr, dc in [(-1, 0), (1, 0), (0, -1), (0, 1)]  # Adjacent cells
-                if 0 <= flag_position[0] + dr < 10 and 0 <= flag_position[1] + dc < 10
+                if 0 <= flag_position[0] + dr < 6 and 0 <= flag_position[1] + dc < 6
             ]
 
             for pos in bomb_positions:
@@ -199,7 +226,7 @@ class StrategoDuelEnv(ta.Env):
                 for _ in range(count):
                     while True:
                         row = random.choice(all_rows)
-                        col = random.randint(0, 9)
+                        col = random.randint(0, 5)
                         if self.board[row][col] is None and (row, col) not in self.lakes:
                             self.board[row][col] = {'rank': piece, 'player': player}
                             self.player_pieces[player].append((row, col))
@@ -259,6 +286,30 @@ class StrategoDuelEnv(ta.Env):
 
 
     def step(self, action: str) -> Tuple[bool, ta.Info]:
+        # new comment(13 Nov 2025) Increment turn counter
+        self.turn_count += 1
+        player_id = self.state.current_player_id
+
+        # new comment(13 Nov 2025) This block fixes Bug #3 (No Moves Remaining).
+        # We check if the player has 0 moves *before* parsing their action.
+        # This prevents an 'Invalid action' penalty when they have no valid moves.
+        num_moves = self.state.game_state.get(f'available_moves_p{player_id}', 1) # Default to 1 to avoid error
+        if num_moves == 0:
+            # The current player cannot move. Check if the *other* player can.
+            if self._has_movable_pieces(1 - player_id):
+                # Opponent still has pieces, so current player loses.
+                reason = f"Player {player_id} has no valid moves remaining. Player {1 - player_id} wins!"
+                self.state.set_winner(player_id=(1 - player_id), reason=reason)
+            else:
+                # Neither player can move. This is a stalemate (draw).
+                reason = "Stalemate: Neither player has any valid moves remaining. The game is a draw."
+                self.state.set_winner(player_id=-1, reason=reason) # -1 means draw
+            
+            # Immediately end the game
+            return self.state.step()
+        
+        # previous code for executing the action
+
         """ Execute an action in the environment """
         player_id = self.state.current_player_id
 
@@ -328,6 +379,9 @@ class StrategoDuelEnv(ta.Env):
                             self.player_pieces[player_id].remove((src_row, src_col))
                             self.player_pieces[player_id].append((dest_row, dest_col))
 
+                            # (12 Nov 2025)👇 ADD THIS LINE: Remove the Bomb's coordinate from the defender's list
+                            self.player_pieces[1 - player_id].remove((dest_row, dest_col))
+
                             ## add the observation to both players separately
                             message=f"You have moved your piece from {source} to {dest}. The attacking piece was {attacking_piece['rank']} and the destination piece was {target_piece['rank']}. As miners can defuse bombs, you won the battle."
                             self.state.add_observation(from_id=-1, to_id=player_id, message=message, observation_type=ta.ObservationType.GAME_ACTION_DESCRIPTION)
@@ -354,7 +408,15 @@ class StrategoDuelEnv(ta.Env):
                         self.player_pieces[player_id].append((dest_row, dest_col))
                         self.player_pieces[1 - player_id].remove((dest_row, dest_col))
                         ## game over
-                        self.state.set_winner(player_id=player_id,reason=[f"Player {player_id} has captured the opponent's flag!"])
+
+                        # Changes below: for the Winner setting(12 Nov 2025)
+                        reason=f"Player {player_id} has captured the opponent's flag!"
+                        self.state.set_winner(player_id=player_id,reason=reason)
+
+                        # Immediately end the game and return the final state
+                        return self.state.step()
+
+
                     elif attacking_piece['rank'] == 'Spy' and target_piece['rank'] == 'Marshal':
                         ## Spy beats Marshal only if spy attacks first
                         self.board[dest_row][dest_col] = attacking_piece
@@ -397,16 +459,34 @@ class StrategoDuelEnv(ta.Env):
                         message=f"Player {player_id} has moved a piece from {source} to {dest}. The attacking piece was {attacking_piece['rank']} and the destination piece was {target_piece['rank']}. As the attacker is a lower rank than the destination, you won the battle."
                         self.state.add_observation(from_id=-1, to_id=1-player_id, message=message, observation_type=ta.ObservationType.GAME_ACTION_DESCRIPTION)
 
-        ## check if the game is over
-        if self._check_winner():
-            reason=f"Player {self._check_winner()} wins! Player {1 - self._check_winner()} has no more movable pieces."
-            self.state.set_winner(player_id=self._check_winner(), reason=reason)
+        # new comment(13 Nov 2025) This block checks for win/draw conditions
+        # *after* a move has been successfully made.
+
+        # 1. Check for Elimination Win (opponent has no movable pieces left)
+        winner = self._check_winner()
+        if winner is not None:
+            reason=f"Player {winner} wins! Player {1 - winner} has no more movable pieces."
+            self.state.set_winner(player_id=winner, reason=reason)
+
+        # 2. Check for Stalemate (Draw)
+        elif self._check_stalemate():
+            reason = "Stalemate: Neither player has any valid moves remaining. The game is a draw."
+            self.state.set_winner(player_id=-1, reason=reason) # -1 means draw
+        
+        # 3. Check for Turn Limit (Draw) - This fixes Bug #2
+        elif self.turn_count > 1000: # You can adjust this number
+            reason = f"Game ended in a draw (turn limit of {self.turn_count} moves exceeded)."
+            self.state.set_winner(player_id=-1, reason=reason)
 
         ## update the rendered board
         self.state.game_state["rendered_board"] = self._render_board(player_id=player_id, full_board=True)
 
         result = self.state.step()
-        self._observe_current_state()
+        
+        # We must observe the *next* player's state *before* returning
+        if not result[0]: # If game is not done
+             self._observe_current_state()
+             
         return result
     
     def _validate_move(self, player_id, src_row, src_col, dest_row, dest_col):
@@ -473,12 +553,61 @@ class StrategoDuelEnv(ta.Env):
         
         return True
     
+    #Working on below for new code to deal with Non Type error
+    # def _check_winner(self):
+    #     """
+    #     determine which player has no more pieces that are not bombs or flags.
+    #     """
+    #     for player in range(2):
+    #         if all([self.board[row][col]['rank'] in ['Bomb', 'Flag'] for row, col in self.player_pieces[player]]):
+    #             return 1 - player
+    #     return None
+
     def _check_winner(self):
         """
-        determine which player has no more pieces that are not bombs or flags.
+        Determine which player has no more pieces that are not bombs or flags.
+        FIX: Skips coordinates that are empty on the board (already removed).
         """
         for player in range(2):
-            if all([self.board[row][col]['rank'] in ['Bomb', 'Flag'] for row, col in self.player_pieces[player]]):
+            # NEW LOGIC: Filter out None/empty squares before checking rank
+            movable_pieces_remain = any([
+                self.board[row][col] is not None and self.board[row][col]['rank'] not in ['Bomb', 'Flag'] 
+                for row, col in self.player_pieces[player]
+            ])
+            
+            # Original logic: If NO movable pieces remain, the opponent (1 - player) wins.
+            if not movable_pieces_remain:
                 return 1 - player
         return None
     
+    # new comment(13 Nov 2025) These are new helper methods for win/draw checking.
+
+    def _has_movable_pieces(self, player_id: int) -> bool:
+        """Helper function to check if a player has any movable pieces left."""
+        # This uses the same logic as your _check_winner, just isolated
+        return any([
+            self.board[row][col] is not None and self.board[row][col]['rank'] not in ['Bomb', 'Flag'] 
+            for row, col in self.player_pieces[player_id]
+        ])
+
+    def _check_stalemate(self) -> bool:
+        """
+        Checks for two types of stalemate (draw):
+        1. Neither player has any movable pieces left.
+        2. Both players have 0 available moves (e.g., all pieces are blocked).
+        """
+        # 1. Check if both players are eliminated (e.g., last two pieces trade)
+        p0_has_movable = self._has_movable_pieces(0)
+        p1_has_movable = self._has_movable_pieces(1)
+        if not p0_has_movable and not p1_has_movable:
+            return True # Both players lost all pieces
+
+        # 2. Check if both players are blocked (0 moves)
+        # This relies on _observe_current_state being called
+        p0_move_count = self.state.game_state.get('available_moves_p0', 1) # Default to 1
+        p1_move_count = self.state.game_state.get('available_moves_p1', 1)
+        
+        if p0_move_count == 0 and p1_move_count == 0:
+            return True # Both players are blocked
+            
+        return False

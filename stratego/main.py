@@ -1,5 +1,7 @@
 import argparse
 #updated import statement
+#(13 Nov 2025) for import sys: it helps in managing system-specific parameters and functions.
+import sys
 from stratego.env.stratego_env_2 import StrategoEnv
 from stratego.models.ollama_model import OllamaAgent
 from stratego.prompts import get_prompt_pack
@@ -44,11 +46,34 @@ def cli():
     p.add_argument("--p1-num-gpu", type=int, default=0,
                     help="Number of GPU layers to offload for Player 1. Default is 0 (CPU-only mode). Use a positive number (e.g., 40) to offload layers to GPU/VRAM, or 999 for maximum GPU use.")
     
+    #(13 Nov 2025) NOTE: Default env_id is used as a flag to trigger the interactive menu
+    DEFAULT_ENV = "Stratego-v0"
+    CUSTOM_ENV = "Stratego-duel"
+
     p.add_argument("--prompt", default="base", help="Prompt preset name (e.g. base|concise|adaptive)")
     p.add_argument("--env_id", default="Stratego-v0", help="TextArena environment id")
     args = p.parse_args()
 
-  # Agents initialization
+    #(13 Nov 2025) --- INTERACTIVE ENVIRONMENT SELECTION ---
+    if args.env_id == DEFAULT_ENV:
+        print("\n--- Stratego Version Selection ---")
+        print(f"1. Standard Game ({DEFAULT_ENV})")
+        print(f"2. Duel Mode ({CUSTOM_ENV})")
+        
+        while True:
+            choice = input("Enter your choice (1 or 2, or press Enter for 1): ").strip()
+            if not choice or choice == '1':
+                print(f"Selected: {DEFAULT_ENV}")
+                break
+            elif choice == '2':
+                args.env_id = CUSTOM_ENV
+                print(f"Selected: {CUSTOM_ENV}")
+                break
+            else:
+                print("Invalid choice. Please enter 1 or 2.")
+
+    #(13 Nov 2025) --- AGENT AND ENVIRONMENT SETUP ---
+    # Agents initialization
     agents = {
         0: build_agent(args.p0, args.prompt),
         1: build_agent(args.p1, args.prompt),
@@ -63,8 +88,8 @@ def cli():
     turn_count = 0  # Initialize turn counter
 
     print("\n--- Stratego LLM Match Started ---")
-    print(f"Player 0 Agent: {agents[0].model_name} (Prompt: {args.prompt})")
-    print(f"Player 1 Agent: {agents[1].model_name} (Prompt: {args.prompt})\n")
+    print(f"Player 1 Agent: {agents[0].model_name} (Prompt: {args.prompt})")
+    print(f"Player 2 Agent: {agents[1].model_name} (Prompt: {args.prompt})\n")
 
     #Whole block revised(13 Nov 2025)
     while not done:
