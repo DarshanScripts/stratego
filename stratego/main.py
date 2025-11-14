@@ -37,12 +37,15 @@ def cli():
     env.reset(num_players=2)
 
     done = False
+    turn = 0
     while not done:
+        turn += 1
         player_id, observation = env.get_observation()
         print_board(observation)
 
         action = agents[player_id](observation)
-        print(f"{agents[player_id].model_name} -> {action}")
+        print(f"Turn {turn}:")
+        print(f"{agents[player_id].model_name} -> {action}\n")
 
         done, _ = env.step(action=action)
 
