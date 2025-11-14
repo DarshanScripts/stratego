@@ -88,8 +88,8 @@ def cli():
     turn_count = 0  # Initialize turn counter
 
     print("\n--- Stratego LLM Match Started ---")
-    print(f"Player 1 Agent: {agents[0].model_name} (Prompt: {args.prompt})")
-    print(f"Player 2 Agent: {agents[1].model_name} (Prompt: {args.prompt})\n")
+    print(f"Player 0 Agent: {agents[0].model_name} (Prompt: {args.prompt})")
+    print(f"Player 1 Agent: {agents[1].model_name} (Prompt: {args.prompt})\n")
 
     #Whole block revised(13 Nov 2025)
     while not done:
