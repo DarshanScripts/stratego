@@ -5,6 +5,26 @@ MOVE_RE = re.compile(r"\[[A-J]\d\s+[A-J]\d\]")
 BOARD_HEADER_RE = re.compile(r"^0\s+1\s+2\s+3\s+4\s+5\s+6\s+7\s+8\s+9$")
 FORBID_LINE_RE = re.compile(r"^FORBIDDEN.*:$", re.IGNORECASE)
 
+# def extract_legal_moves(observation: str) -> List[str]:
+#     legal: List[str] = []
+#     for line in observation.splitlines():
+#         if line.strip().startswith("Available Moves:"):
+#             legal = MOVE_RE.findall(line)
+#     return [m.strip("[]").strip() for m in legal]  # <- normalize here
+
+# def extract_forbidden(observation: str) -> List[str]:
+#     forb: List[str] = []
+#     lines = observation.splitlines()
+#     for i, line in enumerate(lines):
+#         if FORBID_LINE_RE.match(line.strip()):
+#             j = i + 1
+#             while j < len(lines) and "[" in lines[j]:
+#                 forb.extend(MOVE_RE.findall(lines[j]))
+#                 j += 1
+#             break
+#     return [m.strip("[]").strip() for m in forb]  # <- normalize here
+
+
 def extract_legal_moves(observation: str) -> List[str]:
     legal: List[str] = []
     for line in observation.splitlines():
