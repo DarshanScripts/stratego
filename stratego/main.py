@@ -1,5 +1,5 @@
 import argparse
-from stratego.utils import GameMoveTracker
+from stratego.utils.game_move_tracker import GameMoveTracker as MoveTrackerClass
 from stratego.env.stratego_env import StrategoEnv
 from stratego.models.ollama_model import OllamaAgent
 from stratego.prompts import get_prompt_pack
@@ -22,7 +22,7 @@ def print_board(observation: str):
 
 # With those arguments, user can change game setting
 def cli():
-    tracker = GameMoveTracker()
+    tracker = MoveTrackerClass()
     p = argparse.ArgumentParser()
     p.add_argument("--p0", default="ollama:mistral:7b")
     p.add_argument("--p1", default="ollama:gemma:2b")
@@ -65,9 +65,9 @@ def cli():
         turn = 0
         while not done:
             player_id, observation = env.get_observation()
-            
             print_board(observation)
-
+            observation = observation + tracker.to_prompt_string(player_id)
+            print(tracker.to_prompt_string(player_id))
             action = agents[player_id](observation)
             print(f"{agents[player_id].model_name} -> {action}")
             print(turn)
