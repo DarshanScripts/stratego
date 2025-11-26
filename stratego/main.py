@@ -1,7 +1,6 @@
 import argparse
 from stratego.utils.game_move_tracker import GameMoveTracker as MoveTrackerClass
 from stratego.env.stratego_env import StrategoEnv
-from stratego.models.ollama_model import OllamaAgent
 from stratego.prompts import get_prompt_pack
 from stratego.utils.parsing import extract_board_block_lines
 from stratego.utils.logging import GameLogger
@@ -9,8 +8,12 @@ from stratego.utils.logging import GameLogger
 def build_agent(spec: str,  prompt_name: str):
     kind, name = spec.split(":", 1)
     if kind == "ollama":
+        from stratego.models.ollama_model import OllamaAgent
         return OllamaAgent(model_name=name, temperature=0.2, num_predict=32,
                            prompt_pack=get_prompt_pack(prompt_name))
+    if kind == "hf":
+        from stratego.models.hf_model import HFLocalAgent
+        return HFLocalAgent(model_id=name, prompt_pack=prompt_name)
     raise ValueError(f"Unknown agent spec: {spec}")
 
 # Later we can make printing board method as more in detail.
@@ -24,8 +27,8 @@ def print_board(observation: str):
 def cli():
     tracker = MoveTrackerClass()
     p = argparse.ArgumentParser()
-    p.add_argument("--p0", default="ollama:mistral:7b")
-    p.add_argument("--p1", default="ollama:gemma:2b")
+    p.add_argument("--p0", default="ollama:llama3.2:1b")
+    p.add_argument("--p1", default="ollama:llama3.1:8b")
     p.add_argument("--prompt", default="base", help="Prompt preset name (e.g. base|concise|adaptive)")
     p.add_argument("--env_id", default="Stratego-v0", help="TextArena environment id")
     p.add_argument("--log-dir", default="stratego/logs", help="Directory for per-game CSV logs")
@@ -70,7 +73,7 @@ def cli():
             print(tracker.to_prompt_string(player_id))
             action = agents[player_id](observation)
             print(f"{agents[player_id].model_name} -> {action}")
-            print(turn)
+            print(f"Turn: {turn}")
 
             done, info = env.step(action=action)
 
