@@ -133,36 +133,7 @@ def improve_prompt(log_dir: str, output_path: str, model_name: str = "mistral:7b
     game_data_summary = json.dumps(games, indent=2)[:2000]
 
     # Creates the prompt for the llm
-    analysis_prompt = f"""You are a Stratego prompt optimizer AI responsible for refining the Stratego-playing agent's system prompt.
-Below is the current system prompt:
----
-{old_prompt}
----
-Game Statistics from last {len(games)} games:
-- Average Invalid Move Rate: {avg_invalid_rate*100:.1f}%
-- Average Repeat Move Rate: {avg_repeat_rate*100:.1f}%
-- Total Invalid Moves: {total_invalid}
-- Total Repeated Moves: {total_repeated}
-Common Mistakes:
-{mistakes_summary}
-Detailed game data:
-{game_data_summary}
----
-Your task:
-- The prompt is in a single-line format using \\n for line breaks. Keep this format.
-- DO NOT rewrite or replace the base prompt content before "Prompt Enhancements:".
-- ONLY modify the "Prompt Enhancements:" section at the end.
-- If "Prompt Enhancements:" exists, update it with new fixes. If not, add it.
-- Each enhancement should address specific issues from the statistics.
-- Remove enhancements that are no longer needed if issues are resolved.
-- Keep all \\n as literal \\n characters (not actual line breaks).
-- Output the complete prompt in single-line format with \\n characters.
-- No commentary, just the final prompt text.
-Example format:
-"Base prompt text...\\n\\nPrompt Enhancements:\\n1. Fix for issue X\\n2. Fix for issue Y\\n"
-Generate the updated prompt now:"""
-
-
+  
     analysis_prompt = f"""
 You are a Stratego prompt optimizer AI responsible for refining the Stratego-playing agent's system prompt.
 Below is the current system prompt:

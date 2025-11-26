@@ -1,7 +1,6 @@
 from stratego.prompt_optimizer import improve_prompt
 import os
 import argparse
-#from stratego.env.stratego_env import StrategoEnv
 from stratego.custom_env import CustomStrategoEnv as CustomEnv
 from stratego.env.stratego_env import StrategoEnv
 
@@ -23,7 +22,7 @@ def print_board(observation: str, size: int = 10):
     if block:
         print("\n".join(block))
 
-# With those arguments, user can change game setting
+# With those arguments, user can change game setting 
 def cli():
     p = argparse.ArgumentParser()
     p.add_argument("--p0", default="ollama:phi3:3.8b")
@@ -64,7 +63,7 @@ def cli():
         done = False
         turn = 1
         max_turns = 10
-        while not done and turn <= max_turns:
+        while not done and turn <= max_turns: 
             player_id, observation = env.get_observation()
             if (args.size == 10):
                 print_board(observation)

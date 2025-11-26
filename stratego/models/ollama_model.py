@@ -46,7 +46,8 @@ class OllamaAgent(AgentLike):
                 
         self.initial_prompt = self.system_prompt
 
-        base_url = host or os.getenv("OLLAMA_HOST", "http://localhost:11437")
+
+        base_url = host or os.getenv("OLLAMA_HOST", "http://localhost:11434")
         model_kwargs = {
             "temperature": kwargs.pop("temperature", 0.1),
             "top_p": kwargs.pop("top_p", 0.9),
@@ -90,7 +91,7 @@ class OllamaAgent(AgentLike):
         legal = extract_legal_moves(observation)
         if not legal:
             return ""
-
+ 
         forbidden = set(extract_forbidden(observation))
         legal_filtered = [m for m in legal if m not in forbidden] or legal[:]
         slim = slice_board_and_moves(observation)
