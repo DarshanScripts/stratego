@@ -1,11 +1,20 @@
-from stratego.prompt_optimizer import improve_prompt
+from stratego.prompt_optimizer import improve_prompt_after_game
 import os
+import re
+import time
 import argparse
 from stratego.env.stratego_env import StrategoEnv
 from stratego.models.ollama_model import OllamaAgent
 from stratego.prompts import get_prompt_pack
 from stratego.utils.parsing import extract_board_block_lines
 from stratego.game_logger import GameLogger
+
+# Piece rank mapping for logging
+PIECE_RANKS = {
+    'Flag': 0, 'Spy': 1, 'Scout': 2, 'Miner': 3, 'Sergeant': 4,
+    'Lieutenant': 5, 'Captain': 6, 'Major': 7, 'Colonel': 8,
+    'General': 9, 'Marshal': 10, 'Bomb': 11
+}
 
 def build_agent(spec: str,  prompt_name: str):
     kind, name = spec.split(":", 1)
@@ -38,6 +47,9 @@ def cli():
     env = StrategoEnv(env_id=args.env_id)
     env.reset(num_players=2)
     
+    # Track game start time
+    game_start_time = time.time()
+    
     # Simple move history tracker (separate for each player)
     move_history = {0: [], 1: []}
 
@@ -46,16 +58,10 @@ def cli():
             if hasattr(agents[pid], "logger"):
                 agents[pid].logger = logger
                 agents[pid].player_id = pid
-            initial = getattr(agents[pid], "initial_prompt", None)
-            if initial:
-                logger.log_prompt(player=pid,
-                                  model_name=getattr(agents[pid], "model_name", "unknown"),
-                                  prompt=initial,
-                                  role="initial")
 
         done = False
         turn = 1
-        max_turns = 10
+        max_turns = 100000
         while not done and turn < max_turns:
             player_id, observation = env.get_observation()
             print_board(observation)
@@ -63,29 +69,34 @@ def cli():
             # Pass recent move history to agent
             agents[player_id].set_move_history(move_history[player_id][-10:])
 
+            # Time the agent response
+            move_start = time.time()
             action = agents[player_id](observation)
+            response_time_ms = int((time.time() - move_start) * 1000)
+            
             player_name = "Player 0" if player_id == 0 else "Player 1"
-            print(f"Turn {turn} | {player_name}[{agents[player_id].model_name}] -> {action}")
+            print(f"Turn {turn} | {player_name}[{agents[player_id].model_name}] -> {action} ({response_time_ms}ms)")
             
             # Extract move details for logging
-            import re
             move_pattern = r'\[([A-J]\d+)\s+([A-J]\d+)\]'
             match = re.search(move_pattern, action)
             src_pos = match.group(1) if match else ""
             dst_pos = match.group(2) if match else ""
             
-            # Get piece type from board (simplified extraction)
+            # Get piece type and rank from board
             piece_type = ""
-            if src_pos and hasattr(env, 'game_state') and hasattr(env.game_state, 'board'):
+            piece_rank = None
+            if src_pos:
                 try:
-                    # Parse position like "D4" -> row=3, col=3
-                    col = ord(src_pos[0]) - ord('A')
-                    row = int(src_pos[1:]) - 1
-                    piece = env.game_state.board[row][col]
-                    if piece and hasattr(piece, 'rank_name'):
-                        piece_type = piece.rank_name
-                except:
-                    piece_type = "Unknown"
+                    row = ord(src_pos[0]) - ord('A')
+                    col = int(src_pos[1:])
+                    board = env.env.board
+                    piece = board[row][col]
+                    if piece and isinstance(piece, dict) and 'rank' in piece:
+                        piece_type = piece['rank']
+                        piece_rank = PIECE_RANKS.get(piece_type)
+                except Exception:
+                    pass
             
             # Check if this is a repeated move (last 3 moves)
             was_repeated = False
@@ -102,44 +113,71 @@ def cli():
 
             done, outcome_info = env.step(action=action)
             
-            # Extract outcome from environment observation
+            # Simple outcome - just move or battle
             outcome = "move"
-            captured = ""
             if outcome_info and len(outcome_info) > 1:
-                obs_text = str(outcome_info[1]) if len(outcome_info) > 1 else ""
-                if "won" in obs_text.lower() or "captured" in obs_text.lower():
-                    outcome = "won_battle"
-                    # Try to extract captured piece name
-                    cap_match = re.search(r'captured.*?(\w+)', obs_text, re.IGNORECASE)
-                    if cap_match:
-                        captured = cap_match.group(1)
-                elif "lost" in obs_text.lower() or "defeated" in obs_text.lower():
-                    outcome = "lost_battle"
-                elif "draw" in obs_text.lower() or "tie" in obs_text.lower():
-                    outcome = "draw"
-                elif "invalid" in obs_text.lower() or "illegal" in obs_text.lower():
-                    outcome = "invalid"
+                obs_text = str(outcome_info[1]).lower()
+                if any(word in obs_text for word in ["won", "lost", "captured", "defeated", "draw", "tie"]):
+                    outcome = "battle"
 
-            logger.log_move(turn=turn,
-                                player=player_id,
-                                model_name=getattr(agents[player_id], "model_name", "unknown"),
-                                move=action,
-                                src=src_pos,
-                                dst=dst_pos,
-                                piece_type=piece_type,
-                                outcome=outcome,
-                                captured=captured,
-                                was_repeated=was_repeated)
+            logger.log_move(
+                turn=turn,
+                player=player_id,
+                model_name=getattr(agents[player_id], "model_name", "unknown"),
+                move=action,
+                src=src_pos,
+                dst=dst_pos,
+                piece_type=piece_type,
+                piece_rank=piece_rank,
+                outcome=outcome,
+                was_repeated=was_repeated,
+                response_time_ms=response_time_ms
+            )
 
             turn += 1
-    rewards, game_info = env.close()
-    print("Game finished.", rewards, game_info)
+        
+        # Get problem summary before closing logger (inside with block)
+        problem_summary = logger.get_problem_summary(winner=None)
     
-    num_games = len([f for f in os.listdir(args.log_dir) if f.endswith(".csv")])
-    if num_games % 1 == 0:
-        print("Running prompt improvement based on recent games...")
-        from stratego.prompt_optimizer import improve_prompt
-        improve_prompt(args.log_dir, "stratego/prompts/current_prompt.txt", model_name="phi3:14b")
+    rewards, game_info = env.close()
+    
+    # Calculate game duration
+    game_duration = time.time() - game_start_time
+    duration_min = int(game_duration // 60)
+    duration_sec = int(game_duration % 60)
+    
+    print("Game finished.", rewards, game_info)
+    print(f"Game duration: {duration_min}m {duration_sec}s")
+    
+    # Determine winner from rewards
+    winner = None
+    if rewards:
+        if rewards.get(0, 0) > rewards.get(1, 0):
+            winner = 0
+        elif rewards.get(1, 0) > rewards.get(0, 0):
+            winner = 1
+    
+    # Automatic prompt improvement based on this game's mistakes
+    if problem_summary:
+        problem_summary.winner = winner
+        
+        print(f"\n--- Game Analysis ---")
+        print(f"Total turns: {problem_summary.total_turns}")
+        print(f"Repeated moves: {len(problem_summary.repeated_moves)}")
+        print(f"Back-and-forth patterns: {len(problem_summary.back_and_forth)}")
+        print(f"Battles: {problem_summary.battles_won} won, {problem_summary.battles_lost} lost")
+        
+        # Get model names for logging
+        model_names = [agents[0].model_name, agents[1].model_name]
+        
+        # Improve prompt based on specific mistakes
+        improve_prompt_after_game(
+            problem_summary, 
+            prompts_dir="stratego/prompts",
+            logs_dir=args.log_dir,
+            models=model_names,
+            game_duration_seconds=game_duration
+        )
 
 
 if __name__ == "__main__":

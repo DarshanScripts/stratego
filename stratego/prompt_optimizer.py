@@ -1,191 +1,198 @@
-import os
-import json
-import glob
-from stratego.models.ollama_model import OllamaAgent
+"""
+Prompt Optimizer: Improves prompts by analyzing specific mistakes from games.
 
-# Reads the last games
-def load_last_games(log_dir: str, limit: int = 10):
-    games = []
-    csv_files = sorted(glob.glob(os.path.join(log_dir, "*.csv")), reverse=True)
-    for path in csv_files[:limit]:
-        with open(path, "r", encoding="utf-8") as f:
-            lines = f.readlines()
-
-        # Parse CSV properly
-        import csv
-        with open(path, "r", encoding="utf-8") as f:
-            reader = csv.DictReader(f)
-            rows = list(reader)
-
-        models = {}
-        prompts = {}
-        example_moves = []
-        detailed_moves = []
-        invalid_moves = []
-        repeated_moves = []
-        piece_usage = {}
-        battle_results = {"won": 0, "lost": 0, "draw": 0}
-
-        for row in rows:
-            if row.get("type") == "prompt":
-                player = row.get("player")
-                model = row.get("model_name")
-                text = row.get("prompt", "")
-                prompts[player] = text
-                models[player] = model
-            elif row.get("type") == "move":
-                move = row.get("move", "")
-                piece_type = row.get("piece_type", "")
-                outcome = row.get("outcome", "")
-                captured = row.get("captured", "")
-                was_repeated = row.get("was_repeated", "no")
-
-                if len(example_moves) < 10:
-                    example_moves.append(move)
-
-                detailed_moves.append({
-                    "move": move,
-                    "piece": piece_type,
-                    "outcome": outcome,
-                    "captured": captured,
-                    "repeated": was_repeated
-                })
-
-                if outcome == "invalid":
-                    invalid_moves.append({"piece": piece_type, "move": move})
-
-                if was_repeated == "yes":
-                    repeated_moves.append({"piece": piece_type, "move": move})
-
-                if piece_type:
-                    piece_usage[piece_type] = piece_usage.get(piece_type, 0) + 1
-
-                if "won" in outcome:
-                    battle_results["won"] += 1
-                elif "lost" in outcome:
-                    battle_results["lost"] += 1
-                elif "draw" in outcome:
-                    battle_results["draw"] += 1
-
-        total_moves = len([m for m in detailed_moves if m.get("outcome")])
-        games.append({
-            "file": os.path.basename(path),
-            "models": models,
-            "initial_prompts": prompts,
-            "num_moves": total_moves,
-            "example_moves": example_moves,
-            "detailed_moves": detailed_moves[:10],  # First 10 for analysis
-            "invalid_count": len(invalid_moves),
-            "invalid_rate": len(invalid_moves) / max(total_moves, 1),
-            "repeated_count": len(repeated_moves),
-            "repeat_rate": len(repeated_moves) / max(total_moves, 1),
-            "piece_usage": piece_usage,
-            "battle_results": battle_results,
-            "invalid_moves": invalid_moves[:5],  # Top 5 for analysis
-            "repeated_moves": repeated_moves[:5]
-        })
-    return games
-
-# Optimizez the prompt based on the info in logs
-def improve_prompt(log_dir: str, output_path: str, model_name: str = "mistral:7b"):
-    print("Testing prompt improvement manually...")
-
-    games = load_last_games(log_dir)
-    if not games:
-        print("Only 0 games logged, skipping prompt improvement.")
-        return
-
-    # Writes the raw output for the analysis
-    summaries_path = os.path.join(os.path.dirname(output_path), "game_summaries.json")
-    with open(summaries_path, "w", encoding="utf-8") as f:
-        json.dump(games, f, indent=2)
-    print(f"Saved raw game summaries to {summaries_path}")
-
-    # Reades the old prompt if it exists
-    if os.path.exists(output_path):
-        with open(output_path, "r", encoding="utf-8") as f:
-            old_prompt = f.read().strip()
-    else:
-        old_prompt = "You are an expert Stratego-playing AI agent.\nYour goal is to win the game by strategically capturing the opponent's flag or eliminating all movable enemy pieces.\nFollow these instructions carefully:\n\n1. Rules of Movement\n- You can move one piece per turn.\n- Pieces move one square per turn, horizontally or vertically (no diagonals).\n- You cannot move onto lakes or outside the board.\n- Bombs (B) and Flags (F) cannot move.\n\n2. Attacking Rules\n- When moving onto a square occupied by an opponent's piece:\n  - The lower-ranked piece loses.\n  - If ranks are equal, both pieces are removed.\n  - The Spy (1) can defeat the Marshal (10) only if the Spy attacks first.\n  - The Miner (3) can defuse Bombs (B).\n\n3. Strategic Guidelines\n- Prioritize discovering unknown enemy pieces.\n- Protect your Flag and high-value pieces such as the Marshal and General.\n- Use Scouts (9) to explore open lines.\n- Use Miners (3) to disarm Bombs when possible.\n- Avoid repetitive or meaningless moves.\n- Maintain a balance between attack and defense.\n- Try to gain information about enemy positions while minimizing risk.\n\n4. Output Format\n- Always output exactly one legal move using the format: [SRC DST]\n  Example: [D5 E5]\n\n5. Constraints\n- Do not output any explanations, reasoning, or additional text.\n- If multiple moves are possible, choose the one that maximizes long-term strategic advantage.\n\nExample of correct output:\n[D4 E4]\n\nYou are now playing Stratego as an intelligent and strategic agent. Think ahead, adapt, and play to win."
-
-    # Creates the instance for the llm model
-    llm = OllamaAgent(model_name=model_name)
-
-    # Analyze common issues across games
-    total_invalid = sum(g.get("invalid_count", 0) for g in games)
-    total_repeated = sum(g.get("repeated_count", 0) for g in games)
-    avg_invalid_rate = sum(g.get("invalid_rate", 0) for g in games) / max(len(games), 1)
-    avg_repeat_rate = sum(g.get("repeat_rate", 0) for g in games) / max(len(games), 1)
-
-    # Collect common mistake patterns
-    all_invalid = []
-    all_repeated = []
-    for g in games:
-        all_invalid.extend(g.get("invalid_moves", []))
-        all_repeated.extend(g.get("repeated_moves", []))
-
-    # Prepare mistake summary
-    mistakes_summary = json.dumps({
-        'invalid_moves': all_invalid[:5], 
-        'repeated_moves': all_repeated[:5]
-    }, indent=2)
-
-    game_data_summary = json.dumps(games, indent=2)[:2000]
-
-    # Creates the prompt for the llm
-    analysis_prompt = f"""
-You are a Stratego prompt optimizer AI responsible for refining the Stratego-playing agent's system prompt.
-Below is the current system prompt:
----
-{old_prompt}
-Here are detailed summaries of the last {len(games)} games:
-{json.dumps(games, indent=2)[:3000]}
----
-Your task:
-- DO NOT rewrite or replace the current prompt entirely.
-- Instead, carefully **append or modify** sections of the old prompt only where logically needed.
-- Preserve all original sections, wordings, and formatting of old_prompt.
-- Append new clarifications or improvements **after** the existing text in a section called "Prompt Enhancements:".
-- Keep every original rule intact (do not delete or reword existing ones).
-- Add any new fixes only at the end under "Prompt Enhancements:" followed by numbered improvements.
-- Focus on fixing the specific issues identified in the statistics above.
-- If certain pieces (like Bombs) generate many invalid moves, add explicit rules about them.
-- If repeated moves are common, add stronger warnings against repeating recent moves.
-- Never remove or reformat the old prompt content.
-- Keep all \n as literal line breaks for readability.
-- The final output must contain:
-  1. The full old prompt text (unchanged)
-  2. An added "Prompt Enhancements:" section containing:
-     - fixes for known issues from recent games
-     - any additional clarity or constraints to improve performance
-- Output exactly the final updated prompt text, no commentary or explanation.
-- Return in a single text block (no JSON).
-Prompt Enhancements:
-1. Reduce the {avg_repeat_rate*100:.1f}% repeat rate by emphasizing move diversity.
-2. Add specific tactical advice based on piece usage patterns.
+Instead of generic tips, this adds concrete mistake descriptions:
+- Exact moves that were repeated
+- Back-and-forth patterns detected
+- Piece overuse details
+- Battle loss information
 """
 
+from typing import List
 
-    print("Sending optimization request to LLM...")
-    improved = llm._llm_once(analysis_prompt)
+from stratego.problem_tracker import MistakeSummary
+from stratego.prompt_manager import PromptManager
 
-    # Fallback in case the model does not respond
-    if not improved or improved.strip() == "":
-        print("No response from Ollama — using fallback improved prompt.")
-        improved = """You are an improved Stratego AI.
-Analyze the board logically and play proactively.
-Prefer moves that capture or pressure enemy pieces.
-Output exactly one legal move in the format [SRC DST]."""
 
-    # Writes the final prompt (overwrite, not append)
-    with open(output_path, "w", encoding="utf-8") as f:
-        f.write(improved.strip())
+def generate_mistake_statements(summary: MistakeSummary, max_mistakes: int = 5) -> List[str]:
+    """
+    Generate percentage-based feedback from game analysis.
+    Uses general guidance, not specific moves.
+    
+    Args:
+        summary: Mistake summary from the game
+        max_mistakes: Maximum number of feedback points
+        
+    Returns:
+        List of percentage-based feedback
+    """
+    mistakes = []
+    total_turns = summary.total_turns or 1
+    
+    # 1. Calculate repetition rate
+    total_repeated = sum(len(turns) for turns in summary.repeated_moves.values() if len(turns) >= 2)
+    repetition_pct = (total_repeated / total_turns) * 100 if total_turns > 0 else 0
+    
+    if repetition_pct > 20:
+        mistakes.append(
+            f"Too many repeated moves ({repetition_pct:.0f}% of game). Try more variety in your moves."
+        )
+    elif repetition_pct > 10:
+        mistakes.append(
+            f"Some move repetition detected ({repetition_pct:.0f}%). Consider varying your strategy."
+        )
+    
+    # 2. Back-and-forth rate
+    back_forth_count = sum(count for _, _, count in summary.back_and_forth)
+    back_forth_pct = (back_forth_count * 2 / total_turns) * 100 if total_turns > 0 else 0
+    
+    if back_forth_pct > 15:
+        mistakes.append(
+            f"High back-and-forth movement ({back_forth_pct:.0f}%). Commit to advancing instead of retreating."
+        )
+    
+    # 3. Piece usage diversity
+    if summary.piece_usage:
+        total_moves = sum(summary.piece_usage.values())
+        pieces_used = len(summary.piece_usage)
+        max_usage = max(summary.piece_usage.values())
+        max_piece = max(summary.piece_usage, key=summary.piece_usage.get)
+        max_pct = (max_usage / total_moves) * 100 if total_moves > 0 else 0
+        
+        if max_pct > 40:
+            mistakes.append(
+                f"Over-reliance on {max_piece} ({max_pct:.0f}% of moves). Use more pieces strategically."
+            )
+        elif pieces_used < 5 and total_moves > 20:
+            mistakes.append(
+                f"Limited piece variety (only {pieces_used} piece types used). Engage more of your army."
+            )
+    
+    # 4. Battle win rate
+    total_battles = summary.battles_won + summary.battles_lost
+    if total_battles > 0:
+        win_rate = (summary.battles_won / total_battles) * 100
+        if win_rate < 40:
+            mistakes.append(
+                f"Low battle win rate ({win_rate:.0f}%). Scout unknown pieces before attacking."
+            )
+    
+    return mistakes[:max_mistakes]
 
-    print("Prompt updated successfully.\n")
-    print("NEW PROMPT:\n" + "-" * 60)
-    print(improved.strip())
-    print("-" * 60)
 
-# Direct execution
+def apply_mistakes_to_prompt(base_prompt: str, mistakes: List[str]) -> str:
+    """
+    Add mistake descriptions to the BASE prompt (replaces, not appends).
+    
+    Args:
+        base_prompt: The base prompt text (clean, no old mistakes)
+        mistakes: List of specific mistake descriptions from LAST game only
+        
+    Returns:
+        Base prompt + new mistakes section
+    """
+    if not mistakes:
+        return base_prompt
+    
+    # Start fresh from base prompt (no old mistakes)
+    # Remove any existing mistakes section just in case
+    marker = "--- LAST GAME FEEDBACK ---"
+    if marker in base_prompt:
+        base_prompt = base_prompt.split(marker)[0].rstrip()
+    
+    # Add new mistakes section
+    result = base_prompt + f"\n\n{marker}\n"
+    for mistake in mistakes:
+        result += f"• {mistake}\n"
+    
+    return result
+
+
+def improve_prompt_after_game(
+    summary: MistakeSummary,
+    prompts_dir: str = "stratego/prompts",
+    logs_dir: str = "logs",
+    models: list = None,
+    game_duration_seconds: float = None
+) -> bool:
+    """
+    Improve prompt based on specific mistakes from a completed game.
+    Always logs game to history, updates prompt only if there are issues.
+    
+    Args:
+        summary: Mistake summary from the game
+        prompts_dir: Directory containing prompts
+        logs_dir: Directory containing logs and fullgame_history.json
+        models: List of model names that played the game
+        game_duration_seconds: How long the game took in seconds
+        
+    Returns:
+        True if prompt was updated, False otherwise
+    """
+    manager = PromptManager(prompts_dir, logs_dir)
+    
+    # Generate feedback (percentage-based)
+    mistakes = generate_mistake_statements(summary)
+    
+    # Always start from BASE prompt
+    base_prompt = manager.get_base_prompt()
+    
+    if mistakes:
+        new_prompt = apply_mistakes_to_prompt(base_prompt, mistakes)
+        reason = f"Game {summary.game_id}: {len(mistakes)} feedback points"
+        print(f"\nPrompt updated with {len(mistakes)} feedback point(s):")
+        for mistake in mistakes:
+            print(f"  • {mistake}")
+    else:
+        new_prompt = base_prompt
+        reason = f"Game {summary.game_id}: No issues detected"
+        print("\nNo significant issues detected. Prompt reset to base.")
+    
+    # Always log the game to history
+    manager.update_prompt(
+        new_prompt, 
+        reason, 
+        models=models or [], 
+        mistakes=mistakes,
+        game_duration_seconds=game_duration_seconds,
+        total_turns=summary.total_turns,
+        winner=summary.winner
+    )
+    
+    return len(mistakes) > 0
+    
+    return True
+
+
+# Legacy function for backwards compatibility
+def improve_prompt(log_dir: str, output_path: str, model_name: str = "phi3:14b"):
+    """Legacy function - improvements now happen automatically after each game."""
+    print("Note: Prompt improvements now happen automatically after each game.")
+
+
 if __name__ == "__main__":
-    improve_prompt("logs", "stratego/prompts/current_prompt.txt", model_name="phi3:14b")
+    # Test with sample data
+    from stratego.problem_tracker import MistakeSummary
+    
+    test_summary = MistakeSummary(
+        game_id="test_game",
+        total_turns=15,
+        repeated_moves={
+            "[G0 F0]": [4, 6, 8],
+            "[D4 E4]": [2, 5]
+        },
+        back_and_forth=[("F0", "G0", 3)],
+        piece_usage={"Scout": 10, "Miner": 2, "Captain": 1},
+        battle_details=[
+            {"turn": 5, "piece": "Scout", "outcome": "lost", "player": 0},
+            {"turn": 8, "piece": "Captain", "outcome": "lost", "player": 0},
+            {"turn": 10, "piece": "Miner", "outcome": "won", "player": 0}
+        ],
+        battles_won=1,
+        battles_lost=2
+    )
+    
+    mistakes = generate_mistake_statements(test_summary)
+    print("Generated mistakes:")
+    for m in mistakes:
+        print(f"  - {m}")
