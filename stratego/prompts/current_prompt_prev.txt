@@ -1,0 +1,64 @@
+```
+[
+  {
+    "file": "20251111_015717_20251111_015717.csv",
+    "models": {
+      "0": "gemma3:270m",
+      "1": "qwen2.5:0.5b"
+    },
+    "initial_prompts": {
+      "0": "You are an expert Stratego agent.\nAnalyze the board carefully and select the next move.\nOutput exactly one legal move in format [A0 B0].",
+      "1": "You are an expert Stratego agent.\nAnalyze the board carefully and select the next move.\nOutput exactly one legal move in format [A0 B0]."
+    },
+    "num_moves": 10,
+    "example_moves": [
+      "D8 F8",
+      "G1 F1",
+      "D4 G4",
+      "F1 E1",
+      "D1 E1",
+      "E1 F1",
+      "D2 D1",
+      "G8 F8",
+      "D9 E9",
+      "F1 G1"
+    ]
+  },
+  {
+    "file": "20251111_012857_20251111_012857.csv",
+    "models": {},
+    "initial_prompts": {},
+    "num_moves": 10,
+    "example_moves": [
+      "D0 G0",
+      "G1 F1",
+      "C0 D0",
+      "G5 D5",
+      "D9 E9",
+      "G0 F0",
+      "E9 E8",
+      "G4 G5",
+      "E8 F8",
+      "F0 E0"
+    ]
+  },
+  {
+    "file": "20251111_005326_20251111_005326.csv",
+    "models": {},
+    "initial_prompts": {},
+    "num_moves": 10,
+    "example_moves": [
+      "D4 E4",
+      "G9 F9",
+      "D3 D4",
+      "G8 G9",
+      "D1 F1",
+      "G9 G8",
+      "D9 F9",
+      "G5 F5",
+      "E4 E5",
+      "G4 F4"
+    ]
+  }
+]
+```

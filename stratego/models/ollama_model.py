@@ -3,10 +3,14 @@ from typing import Optional
 from langchain_ollama import ChatOllama
 from langchain_core.messages import SystemMessage, HumanMessage
 
+import requests
+import json
+
 from .base import AgentLike
 from ..utils.parsing import (
     extract_legal_moves, extract_forbidden, slice_board_and_moves, strip_think, MOVE_RE
 )
+
 # I seperated Prompts from the code
 from ..prompts import PromptPack, get_prompt_pack
 
@@ -77,7 +81,20 @@ Output ONLY one legal move in the exact format [A0 B0]. Nothing else.
         else:
             self.prompt_pack = prompt_pack
 
-        self.system_prompt = system_prompt if system_prompt is not None else self.prompt_pack.system
+
+
+        if system_prompt is not None:
+            self.system_prompt = system_prompt
+        else:
+            # if there is already an existing updated prompt, we use that one
+            prompt_path = os.path.join(os.path.dirname(__file__), "..", "prompts", "current_prompt.txt")
+            if os.path.exists(prompt_path):
+                with open(prompt_path, "r", encoding="utf-8") as f:
+                    self.system_prompt = f.read()
+            else:
+                self.system_prompt = self.prompt_pack.system
+                
+                
         self.initial_prompt = self.system_prompt
 
         base_url = host or os.getenv("OLLAMA_HOST", "http://localhost:11437")
@@ -89,11 +106,110 @@ Output ONLY one legal move in the exact format [A0 B0]. Nothing else.
             **kwargs,
         }
         self.client = ChatOllama(model=model_name, base_url=base_url, model_kwargs=model_kwargs)
+        
+        # Simple move history tracking
+        self.move_history = []
+        self.player_id = None
+
+    def set_move_history(self, history):
+        """Set the recent move history for this agent."""
+        self.move_history = history
 
     def _llm_once(self, prompt: str) -> str:
-        msgs = [SystemMessage(content=self.system_prompt), HumanMessage(content=prompt)]
-        out = self.client.invoke(msgs)
-        return strip_think((out.content or "").strip())
+        """Send request directly to Ollama REST API (fixes Windows LangChain bug)."""
+        try:
+            response = requests.post(
+                "http://localhost:11434/api/generate",
+                json={
+                    "model": self.model_name,
+                    "prompt": prompt,
+                    "stream": False
+                },
+                timeout=300
+            )
+            if response.status_code == 200:
+                data = response.json()
+                return (data.get("response") or "").strip()
+            else:
+                print(f"Ollama returned HTTP {response.status_code}: {response.text}")
+                return ""
+        except Exception as e:
+            print(f"Ollama request failed: {e}")
+            return ""
+
+    # def __call__(self, observation: str) -> str:
+    #     legal = extract_legal_moves(observation)
+    #     if not legal:
+    #         return ""
+
+    #     forbidden = set(extract_forbidden(observation))
+    #     legal_filtered = [m for m in legal if m not in forbidden] or legal[:]
+    #     slim = slice_board_and_moves(observation)
+    #     guidance = self.prompt_pack.guidance(slim)
+
+    #     for _ in range(4):
+    #         raw = self._llm_once(guidance)
+    #         m = MOVE_RE.search(raw)
+    #         if m:
+    #             mv = m.group(0)
+    #             if mv in legal_filtered:
+    #                 return mv
+
+    #         raw2 = self._llm_once("Output exactly one legal move [A0 B0]. DO NOTE REPEAT MOVES FOR NO STRATEGIG REASON")
+    #         m2 = MOVE_RE.search(raw2)
+    #         if m2:
+    #             mv2 = m2.group(0)
+    #             if mv2 in legal_filtered:
+    #                 return mv2
+
+    #     return random.choice(legal_filtered)
+
+    # def __call__(self, observation: str) -> str:
+    #     legal = extract_legal_moves(observation)
+    #     if not legal:
+    #         return ""
+
+    #     forbidden = set(extract_forbidden(observation))
+    #     legal_filtered = [m for m in legal if m not in forbidden] or legal[:]
+
+    #     # Get board + moves
+    #     slim = slice_board_and_moves(observation)
+
+    #     # >>> NEW: extract history directly from observation <<<
+    #     # Your tracker appended history to the raw observation earlier
+    #     history_lines = []
+    #     for line in observation.splitlines():
+    #         if line.startswith("Turn ") or "->" in line:
+    #             history_lines.append(line)
+    #     history = "\n".join(history_lines)
+
+    #     # >>> NEW: Combine slim + history into a single input <<<
+    #     full_context = slim
+    #     if history.strip():
+    #         full_context += "\n\nMOVE HISTORY:\n" + history
+
+    #     # Use combined context in the prompt pack
+    #     guidance = self.prompt_pack.guidance(full_context)
+
+    #     # LLM call loop stays identical
+    #     for _ in range(4):
+    #         raw = self._llm_once(guidance)
+    #         m = MOVE_RE.search(raw)
+    #         if m:
+    #             mv = m.group(0)
+    #             if mv in legal_filtered:
+    #                 return mv
+
+    #         raw2 = self._llm_once(
+    #             self.STRATEGIC_GUIDANCE + "\n\n" + full_context
+    #         )
+    #         m2 = MOVE_RE.search(raw2)
+    #         if m2:
+    #             mv2 = m2.group(0)
+    #             if mv2 in legal_filtered:
+    #                 return mv2
+
+    #     return random.choice(legal_filtered)
 
     # def __call__(self, observation: str) -> str:
     #     legal = extract_legal_moves(observation)
@@ -219,12 +335,26 @@ Output ONLY one legal move in the exact format [A0 B0]. Nothing else.
             + self.prompt_pack.guidance(full_context)
         )
 
+        recent_moves = set()
+        if len(self.move_history) >= 2:
+            recent_moves = {m["move"] for m in self.move_history[-2:]}
+            
         # Now the model ALWAYS sees your anti-repeat rules
         for _ in range(4):
             raw = self._llm_once(guidance)
             m = MOVE_RE.search(raw)
             if m:
                 mv = m.group(0)
+                
+                # Check if it's a repeat of recent move
+                if mv in recent_moves and len(recent_moves) > 0:
+                    # Filter out recent moves from legal options
+                    non_repeat_moves = [lm for lm in legal_filtered if lm not in recent_moves]
+                    if non_repeat_moves:
+                        print(f"   LLM proposed recent move {mv}, trying alternatives...")
+                        legal_filtered = non_repeat_moves
+                        continue
+                
                 if mv in legal_filtered:
                     return mv
 

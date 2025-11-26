@@ -2,7 +2,7 @@
 
 ## Intro
 
-* Write down intro...
+- Write down intro...
 
 ## Initializing Project
 
@@ -73,5 +73,68 @@
 
 ## Regarding Using Different Large Language Models
 
-* If you want to use big LLMs, then make sure, that you are not going to run the game in ssh connected VS Code direclty; it causes freezing problem, because of big usage of GPU of the TU-Calusthal's server. So, pleas run the game local VS Code, but make sure one of the terminal of the VS Code is connected to your own ssh env.
-* If you use big, such as gpt-oss:120b, around 40~50 GB of GPU of the TU-Clausthal's would be taken, which freezes your VS Code terminal. To solve this, you have to find the running task of your own with command, `ps -u {user} -o pid,rss,vsz,cmd --sort -rss` and kill the PID of the task. Probably it is the largest rss one.
+- Write down your insights...
+
+## Dataset and prompt optimization
+
+#In the main.py file:
+
+- Added imports:
+  -Saves every move, prompt, and metadata to CSV logs in logs/:
+  `from stratego.game_logger import GameLogger`
+  `import os`
+  -After every 3 games, automatically improves the LLM’s system prompt:
+  `from stratego.prompt_optimizer import improve_prompt`
+  -Place these imports at the top of the extended script.
+
+-In the cli() function:
+
+- Additional arguments:
+  -Add arguments inside the cli() function
+  -Put them right after p = argparse.ArgumentParser()
+  -cli() is responsible for reading input parameters and configuring the full game:
+  `p.add_argument("--log-dir", default="logs")`
+  `p.add_argument("--game-id", default=None)`
+
+-Logger:
+-In order to implement the dataset, a GameLogger is created into the cli() function which records moves, timestamps each turn, records the original prompt etc:
+
+"""
+with GameLogger(out_dir=args.log_dir, game_id=args.game_id) as logger:
+for pid in (0, 1):
+if hasattr(agents[pid], "logger"):
+agents[pid].logger = logger
+agents[pid].player_id = pid
+initial = getattr(agents[pid], "initial_prompt", None)
+if initial:
+logger.log_prompt(player=pid,
+model_name=getattr(agents[pid], "model_name", "unknown"),
+prompt=initial,
+role="initial")
+"""
+-What this does:
+
+- `with GameLogeer(...) as logger:` creates a new GameLogger instance which prepares a csv log file to store moves and prompts for the entire match.
+- `agents[pid].logger = logger`: a game logger is attached to the agent
+  - `initial = getattr(agents[pid], "initial_prompt", None)`: retrieves the initial system prompt used by the agent because we want tostore it into tha database
+- ````logger.log_prompt(player=pid,
+                    model_name=getattr(agents[pid], "model_name", "unknown"),
+                    prompt=initial,
+                    role="initial")
+  ```: Writes the initial prompt into the CSV log. It ensures every game records EXACTLY which prompt the LLM played with.
+
+  ````
+
+- `````num_games = len([f for f in os.listdir(args.log_dir) if f.endswith(".csv")])
+      if num_games % 3 == 0:
+          print("Running prompt improvement based on recent games...")
+          from stratego.prompt_optimizer import improve_prompt
+          improve_prompt("logs", "stratego/prompts/current_prompt.txt", model_name="mistral:7b")
+    ```` : After each match, the runner counts how many game logs (CSV files) exist.
+  Every 3 games, it automatically calls improve_prompt() to update the Stratego system prompt based on recent gameplay.
+  This allows the agent’s prompt to gradually improve over time using real match data.
+  `````
+
+- Downsizing the board:
+  -In order to do that, firstly we introduce the argument in the `cli()` function:
+  ` p.add_argument("--size", type=int, default=10, help="Board size NxN")`
