@@ -2,7 +2,8 @@ from stratego.prompt_optimizer import improve_prompt
 import os
 import argparse
 #from stratego.env.stratego_env import StrategoEnv
-from stratego.env.stratego_env import CustomStrategoEnv as StrategoEnv
+from stratego.custom_env import CustomStrategoEnv as CustomEnv
+from stratego.env.stratego_env import StrategoEnv
 
 from stratego.models.ollama_model import OllamaAgent
 from stratego.prompts import get_prompt_pack
@@ -17,8 +18,8 @@ def build_agent(spec: str,  prompt_name: str):
     raise ValueError(f"Unknown agent spec: {spec}")
 
 # Later we can make printing board method as more in detail.
-def print_board(observation: str):
-    block = extract_board_block_lines(observation)
+def print_board(observation: str, size: int = 10):
+    block = extract_board_block_lines(observation, size)
     if block:
         print("\n".join(block))
 
@@ -40,7 +41,9 @@ def cli():
         0: build_agent(args.p0, args.prompt),
         1: build_agent(args.p1, args.prompt),
     }
-    env = StrategoEnv(size=args.size)
+    if (args.env_id == "Stratego-v0" and args.size == 10):
+        env = StrategoEnv()
+    else: env = CustomEnv(size=args.size)
     env.reset(num_players=2)
     
     # Simple move history tracker (separate for each player)
@@ -63,7 +66,10 @@ def cli():
         max_turns = 10
         while not done and turn <= max_turns:
             player_id, observation = env.get_observation()
-            print_board(observation)
+            if (args.size == 10):
+                print_board(observation)
+            else:
+                print_board(observation, args.size)
             
             # Pass recent move history to agent
             agents[player_id].set_move_history(move_history[player_id][-10:])

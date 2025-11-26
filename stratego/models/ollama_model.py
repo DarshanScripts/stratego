@@ -46,7 +46,7 @@ class OllamaAgent(AgentLike):
                 
         self.initial_prompt = self.system_prompt
 
-        base_url = host or os.getenv("OLLAMA_HOST", "http://localhost:11434")
+        base_url = host or os.getenv("OLLAMA_HOST", "http://localhost:11437")
         model_kwargs = {
             "temperature": kwargs.pop("temperature", 0.1),
             "top_p": kwargs.pop("top_p", 0.9),
