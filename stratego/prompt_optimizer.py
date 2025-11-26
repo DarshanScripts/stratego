@@ -10,7 +10,7 @@ def load_last_games(log_dir: str, limit: int = 10):
     for path in csv_files[:limit]:
         with open(path, "r", encoding="utf-8") as f:
             lines = f.readlines()
-        
+
         # Parse CSV properly
         import csv
         with open(path, "r", encoding="utf-8") as f:
@@ -39,10 +39,10 @@ def load_last_games(log_dir: str, limit: int = 10):
                 outcome = row.get("outcome", "")
                 captured = row.get("captured", "")
                 was_repeated = row.get("was_repeated", "no")
-                
+
                 if len(example_moves) < 10:
                     example_moves.append(move)
-                
+
                 detailed_moves.append({
                     "move": move,
                     "piece": piece_type,
@@ -50,16 +50,16 @@ def load_last_games(log_dir: str, limit: int = 10):
                     "captured": captured,
                     "repeated": was_repeated
                 })
-                
+
                 if outcome == "invalid":
                     invalid_moves.append({"piece": piece_type, "move": move})
-                
+
                 if was_repeated == "yes":
                     repeated_moves.append({"piece": piece_type, "move": move})
-                
+
                 if piece_type:
                     piece_usage[piece_type] = piece_usage.get(piece_type, 0) + 1
-                
+
                 if "won" in outcome:
                     battle_results["won"] += 1
                 elif "lost" in outcome:
@@ -116,41 +116,61 @@ def improve_prompt(log_dir: str, output_path: str, model_name: str = "mistral:7b
     total_repeated = sum(g.get("repeated_count", 0) for g in games)
     avg_invalid_rate = sum(g.get("invalid_rate", 0) for g in games) / max(len(games), 1)
     avg_repeat_rate = sum(g.get("repeat_rate", 0) for g in games) / max(len(games), 1)
-    
+
     # Collect common mistake patterns
     all_invalid = []
     all_repeated = []
     for g in games:
         all_invalid.extend(g.get("invalid_moves", []))
         all_repeated.extend(g.get("repeated_moves", []))
-    
-    issue_summary = f"""
-### STATISTICS FROM LAST {len(games)} GAMES:
-- Average Invalid Move Rate: {avg_invalid_rate*100:.1f}%
-- Average Repeat Move Rate: {avg_repeat_rate*100:.1f}%
-- Total Invalid Moves: {total_invalid}
-- Total Repeated Moves: {total_repeated}
 
-### COMMON MISTAKES:
-Invalid Moves: {json.dumps(all_invalid[:5], indent=2)}
-Repeated Moves: {json.dumps(all_repeated[:5], indent=2)}
-"""
+    # Prepare mistake summary
+    mistakes_summary = json.dumps({
+        'invalid_moves': all_invalid[:5], 
+        'repeated_moves': all_repeated[:5]
+    }, indent=2)
+
+    game_data_summary = json.dumps(games, indent=2)[:2000]
 
     # Creates the prompt for the llm
-    analysis_prompt = f"""
-You are a Stratego prompt optimizer AI responsible for refining the Stratego-playing agent's system prompt.
-
+    analysis_prompt = f"""You are a Stratego prompt optimizer AI responsible for refining the Stratego-playing agent's system prompt.
 Below is the current system prompt:
 ---
 {old_prompt}
 ---
+Game Statistics from last {len(games)} games:
+- Average Invalid Move Rate: {avg_invalid_rate*100:.1f}%
+- Average Repeat Move Rate: {avg_repeat_rate*100:.1f}%
+- Total Invalid Moves: {total_invalid}
+- Total Repeated Moves: {total_repeated}
+Common Mistakes:
+{mistakes_summary}
+Detailed game data:
+{game_data_summary}
+---
+Your task:
+- The prompt is in a single-line format using \\n for line breaks. Keep this format.
+- DO NOT rewrite or replace the base prompt content before "Prompt Enhancements:".
+- ONLY modify the "Prompt Enhancements:" section at the end.
+- If "Prompt Enhancements:" exists, update it with new fixes. If not, add it.
+- Each enhancement should address specific issues from the statistics.
+- Remove enhancements that are no longer needed if issues are resolved.
+- Keep all \\n as literal \\n characters (not actual line breaks).
+- Output the complete prompt in single-line format with \\n characters.
+- No commentary, just the final prompt text.
+Example format:
+"Base prompt text...\\n\\nPrompt Enhancements:\\n1. Fix for issue X\\n2. Fix for issue Y\\n"
+Generate the updated prompt now:"""
 
-{issue_summary}
 
+    analysis_prompt = f"""
+You are a Stratego prompt optimizer AI responsible for refining the Stratego-playing agent's system prompt.
+Below is the current system prompt:
+---
+{old_prompt}
 Here are detailed summaries of the last {len(games)} games:
 {json.dumps(games, indent=2)[:3000]}
 ---
-
 Your task:
 - DO NOT rewrite or replace the current prompt entirely.
 - Instead, carefully **append or modify** sections of the old prompt only where logically needed.
@@ -170,13 +190,10 @@ Your task:
      - any additional clarity or constraints to improve performance
 - Output exactly the final updated prompt text, no commentary or explanation.
 - Return in a single text block (no JSON).
-
 Prompt Enhancements:
 1. Address the {avg_invalid_rate*100:.1f}% invalid move rate with explicit rules.
 2. Reduce the {avg_repeat_rate*100:.1f}% repeat rate by emphasizing move diversity.
 3. Add specific tactical advice based on piece usage patterns.
-
-
 """
 
 
@@ -191,8 +208,8 @@ Analyze the board logically and play proactively.
 Prefer moves that capture or pressure enemy pieces.
 Output exactly one legal move in the format [SRC DST]."""
 
-    # Writes the final prompt
-    with open(output_path, "a", encoding="utf-8") as f:
+    # Writes the final prompt (overwrite, not append)
+    with open(output_path, "w", encoding="utf-8") as f:
         f.write(improved.strip())
 
     print("Prompt updated successfully.\n")
