@@ -2,13 +2,10 @@
 Stratego AI Game Package
 """
 
-from stratego.problem_tracker import ProblemTracker, MistakeSummary
 from stratego.prompt_manager import PromptManager
-from stratego.prompt_optimizer import improve_prompt_after_game
+from stratego.game_analyzer import analyze_and_update_prompt
 
 __all__ = [
-    "ProblemTracker",
-    "MistakeSummary", 
     "PromptManager",
-    "improve_prompt_after_game"
+    "analyze_and_update_prompt"
 ]
