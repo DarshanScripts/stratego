@@ -1,12 +1,17 @@
 import argparse
 import re
+import time
 from stratego.prompt_optimizer import improve_prompt
+
 import os
 from stratego.env.stratego_env import StrategoEnv
 from stratego.prompts import get_prompt_pack
 from stratego.utils.parsing import extract_board_block_lines
 from stratego.utils.game_move_tracker import GameMoveTracker as MoveTrackerClass
+from stratego.utils.move_processor import process_move
 from stratego.game_logger import GameLogger
+from stratego.game_analyzer import analyze_and_update_prompt
+
 
 #Revised to set temperature(13 Nov 2025)
 def build_agent(spec: str, prompt_name: str):
@@ -111,6 +116,9 @@ def cli():
         env = StrategoEnv()
     env.reset(num_players=2)
     
+    # Track game start time
+    game_start_time = time.time()
+    
     # Simple move history tracker (separate for each player)
     move_history = {0: [], 1: []}
 
@@ -119,12 +127,6 @@ def cli():
             if hasattr(agents[pid], "logger"):
                 agents[pid].logger = logger
                 agents[pid].player_id = pid
-            initial = getattr(agents[pid], "initial_prompt", None)
-            if initial:
-                logger.log_prompt(player=pid,
-                                  model_name=getattr(agents[pid], "model_name", "unknown"),
-                                  prompt=initial,
-                                  role="initial")
 
         done = False
         turn = 0
@@ -234,16 +236,23 @@ def cli():
     rewards, game_info = env.close()
     print("\n" + "="*50)
     print("--- GAME OVER ---")
+    game_duration = time.time() - game_start_time
+    # Print summary
+    print(f"\nGame finished. Duration: {int(game_duration // 60)}m {int(game_duration % 60)}s")
+    print(f"Result: {rewards} | {game_info}")
     
     # Logic to declare the specific winner based on rewards
     # Rewards are usually {0: 1, 1: -1} (P0 Wins) or {0: -1, 1: 1} (P1 Wins)
     p0_score = rewards.get(0, 0)
     p1_score = rewards.get(1, 0)
+    winner = None
 
     if p0_score > p1_score:
+        winner = 0
         print(f"\n🏆 * * * PLAYER 0 WINS! * * * 🏆")
         print(f"Agent: {agents[0].model_name}")
     elif p1_score > p0_score:
+        winner = 1
         print(f"\n🏆 * * * PLAYER 1 WINS! * * * 🏆")
         print(f"Agent: {agents[1].model_name}")
     else:
@@ -252,6 +261,18 @@ def cli():
     print("\nDetails:")
     print(f"Final Rewards: {rewards}")
     print(f"Game Info: {game_info}")
+    
+    # LLM analyzes the game CSV and updates prompt
+    analyze_and_update_prompt(
+        csv_path=logger.path,
+        prompts_dir="stratego/prompts",
+        logs_dir=args.log_dir,
+        model_name="mistral:7b",  # Analysis model
+        models_used=[agents[0].model_name, agents[1].model_name],
+        game_duration_seconds=game_duration,
+        winner=winner,
+        total_turns=turn - 1
+    )
     
     num_games = len([f for f in os.listdir(args.log_dir) if f.endswith(".csv")])
     if num_games % 1 == 0:

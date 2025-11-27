@@ -1,62 +1,36 @@
-# stratego/logging.py
+# stratego/game_logger.py
 from __future__ import annotations
 import csv, os, datetime
-from typing import Optional, Dict, Any
+from typing import Optional
+
 
 class GameLogger:
     """
-    One CSV file per game.
-    We write two kinds of rows:
-      - type=prompt  (one row per player with the initial prompt)
-      - type=move    (one row per move)
+    One CSV file per game stored in logs/games/ folder.
+    
+    CSV Fields (minimal - everything else computed post-game):
+      - turn, player, model_name
+      - move, from_pos, to_pos, piece_type
     """
-    def __init__(self, out_dir: str, game_id: Optional[str] = None, meta: Optional[Dict[str, Any]] = None):
-        os.makedirs(out_dir, exist_ok=True)
+    def __init__(self, out_dir: str, game_id: Optional[str] = None):
+        # Create games subfolder
+        games_dir = os.path.join(out_dir, "games")
+        os.makedirs(games_dir, exist_ok=True)
+        
         ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
         self.game_id = game_id or ts
-        self.path = os.path.join(out_dir, f"{ts}_{self.game_id}.csv")
+        self.path = os.path.join(games_dir, f"{self.game_id}.csv")
         self._f = open(self.path, "w", newline="", encoding="utf-8")
         self._writer = csv.DictWriter(
             self._f,
             fieldnames=[
-                "game_id","timestamp","type",
-                # prompts
-                "player","model_name","role","prompt",
-                # moves
-                "turn","move","from","to","piece_type","outcome","captured","was_repeated","board_after",
-                # freeform
-                "meta_json",
+                "turn", "player", "model_name",
+                "move", "from_pos", "to_pos", "piece_type",
             ],
             quoting=csv.QUOTE_MINIMAL,
             escapechar="\\"
         )
         self._writer.writeheader()
-        self._meta = meta or {}
-
-    def _now(self) -> str:
-        return datetime.datetime.now().isoformat(timespec="seconds")
-
-    def log_prompt(self, player: int, model_name: str, prompt: str, role: str = "initial"):
-        self._writer.writerow({
-            "game_id": self.game_id,
-            "timestamp": self._now(),
-            "type": "prompt",
-            "player": player,
-            "model_name": model_name,
-            "role": role,
-            "prompt": prompt,
-            "turn": "",
-            "move": "",
-            "from": "",
-            "to": "",
-            "piece_type": "",
-            "outcome": "",
-            "captured": "",
-            "was_repeated": "",
-            "board_after": "",
-            "meta_json": "",
-        })
-        self._f.flush()
 
     def log_move(
         self,
@@ -67,40 +41,27 @@ class GameLogger:
         src: str = "",
         dst: str = "",
         piece_type: str = "",
-        outcome: str = "",
-        captured: str = "",
-        was_repeated: bool = False,
-        board_after: str = "",
     ):
         self._writer.writerow({
-            "game_id": self.game_id,
-            "timestamp": self._now(),
-            "type": "move",
+            "turn": turn,
             "player": player,
             "model_name": model_name,
-            "role": "",
-            "prompt": "",
-            "turn": turn,
             "move": move,
-            "from": src,
-            "to": dst,
+            "from_pos": src,
+            "to_pos": dst,
             "piece_type": piece_type,
-            "outcome": outcome,
-            "captured": captured,
-            "was_repeated": "yes" if was_repeated else "no",
-            "board_after": board_after,
-            "meta_json": "",
         })
         self._f.flush()
-
+    
     def close(self):
         try:
             self._f.close()
         except Exception:
             pass
-
+    
     def __enter__(self):
         return self
-
-    def __exit__(self, *exc):
+    
+    def __exit__(self, exc_type, exc_val, exc_tb):
         self.close()
+        return False
