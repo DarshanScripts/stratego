@@ -82,6 +82,7 @@ def cli():
                 break
             elif choice == '2':
                 args.env_id = DUEL_ENV
+                args.size = 6
                 print(f"Selected: {DUEL_ENV}")
                 break
             elif choice == '3':

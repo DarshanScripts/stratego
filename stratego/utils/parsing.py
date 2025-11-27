@@ -2,7 +2,7 @@ import re
 from typing import Any, List, Sequence
 
 MOVE_RE = re.compile(r"\[[A-J]\d\s+[A-J]\d\]")
-BOARD_HEADER_RE = re.compile(r"^0\s+1\s+2\s+3\s+4\s+5\s+6\s+7\s+8\s+9$")
+BOARD_HEADER_RE = re.compile(r"^0(\s+\d+)+$")
 FORBID_LINE_RE = re.compile(r"^FORBIDDEN.*:$", re.IGNORECASE)
 
 # def extract_legal_moves(observation: str) -> List[str]:
