@@ -62,7 +62,7 @@ def cli():
     CUSTOM_ENV = "Stratego-duel"
 
     p.add_argument("--prompt", default="base", help="Prompt preset name (e.g. base|concise|adaptive)")
-    p.add_argument("--env_id", default="Stratego-v0", help="TextArena environment id")
+    p.add_argument("--env_id", default=DEFAULT_ENV, help="TextArena environment id")
     p.add_argument("--log-dir", default="logs", help="Directory for per-game CSV logs")
     p.add_argument("--game-id", default=None, help="Optional custom game id in CSV filename")
     p.add_argument("--size", type=int, default=10, help="Board size NxN")
@@ -94,9 +94,12 @@ def cli():
         0: build_agent(args.p0, args.prompt),
         1: build_agent(args.p1, args.prompt),
     }
+    # Check if it is really normal Stratego version
     if (args.env_id == "Stratego-v0" and args.size == 10):
         env = StrategoEnv()
-    else: env = CustomEnv(size=args.size)
+    # Else, it is custom version
+    elif (args.size != 10): 
+        env = CustomEnv(size=args.size)
     env.reset(num_players=2)
     
     # Simple move history tracker (separate for each player)
