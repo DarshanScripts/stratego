@@ -1,30 +1,38 @@
+import argparse
+import re
 from stratego.prompt_optimizer import improve_prompt
 import os
-import argparse
-#updated import statement
-#(13 Nov 2025) for import sys: it helps in managing system-specific parameters and functions.
 import sys
-#from stratego.env.stratego_env import StrategoEnv
-from stratego.custom_env import CustomStrategoEnv as CustomEnv
-from stratego.utils.game_move_tracker import GameMoveTracker as MoveTrackerClass
 from stratego.env.stratego_env_2 import StrategoEnv
+from stratego.models.ollama_model import OllamaAgent
 from stratego.prompts import get_prompt_pack
 from stratego.utils.parsing import extract_board_block_lines
+from stratego.custom_env import CustomStrategoEnv as CustomEnv
+from stratego.utils.game_move_tracker import GameMoveTracker as MoveTrackerClass
 from stratego.game_logger import GameLogger
 
 #Revised to set temperature(13 Nov 2025)
 def build_agent(spec: str, prompt_name: str):
-    kind, name = spec.split(":", 1)
+    """ 
+    Creates and configures an AI agent based on the input string.
+    Example spec: 'ollama:phi3:3.8b'
+    """
+    kind, name = spec.split(":", 1)  # Split string to get model type and name
+    
     if kind == "ollama":
         from stratego.models.ollama_model import OllamaAgent
         # Define the temperature value explicitly
         AGENT_TEMPERATURE = 0.2
         
-        # OllamaAgent holds the model_name, temperature, and prompt_pack
-        agent = OllamaAgent(model_name=name, temperature=AGENT_TEMPERATURE, num_predict=32,
-                            prompt_pack=get_prompt_pack(prompt_name))
+        # Create the Ollama agent
+        agent = OllamaAgent(
+            model_name=name, 
+            temperature=AGENT_TEMPERATURE, 
+            num_predict=128,  # Allow enough tokens for a complete move response
+            prompt_pack=get_prompt_pack(prompt_name) # Load strategy prompt
+        )
         
-        # FIX: Attach the temperature attribute to the agent object so it can be logged later
+        # Store temperature for logging
         agent.temperature = AGENT_TEMPERATURE
         
         return agent
@@ -33,16 +41,54 @@ def build_agent(spec: str, prompt_name: str):
         return HFLocalAgent(model_id=name, prompt_pack=prompt_name)
     raise ValueError(f"Unknown agent spec: {spec}")
 
-# Later we can make printing board method as more in detail.
-def print_board(observation: str, size: int = 10):
-    block = extract_board_block_lines(observation, size)
+# --- Function to Print the Board ---
+def print_board(observation):
+    """ 
+    Robust function to print the game board to the console.
+    Handles data types (List/Tuple/String) safely.
+    """
+    # 1. Handle List input (History of observations)
+    if isinstance(observation, list):
+        # If list is not empty, take the last item (most recent state)
+        observation = observation[-1] if observation else ""
+    
+    # 2. Handle Tuple input (SenderID, Message, Type)
+    # We want index 1 (the message), not index -1 (the type)
+    if isinstance(observation, tuple):
+        if len(observation) >= 2:
+            observation = str(observation[1]) 
+        else:
+            observation = str(observation[-1])
+    
+    # Ensure observation is a string
+    observation = str(observation)
+
+    # 3. Try standard extraction method (works for 10x10 standard board)
+    block = extract_board_block_lines(observation)
     if block:
-        # Print a separator for readability(13 Nov 2025)
         print("\n" + "="*50)
         print("\n".join(block))
+        return
 
+    # 4. Fallback extraction (works for our 6x6 board with backticks ```)
+    if "```" in observation:
+        print("\n" + "="*50)
+        try:
+            parts = observation.split("```") # Split string by backticks
+            if len(parts) > 1:
+                # Extract middle part, remove whitespace, and fix escape characters (\n)
+                print(parts[1].strip().encode().decode('unicode_escape')) 
+            else:
+                print(observation) # Print raw if split fails
+        except:
+            print(observation)
+    else:
+        # 5. Last resort: Print raw text, but filter out internal Enum strings
+        if "ObservationType" not in observation:
+            print("\n[DEBUG RAW BOARD DATA]:")
+            print(observation)
 
-# With those arguments, user can change game setting
+# --- Main Command Line Interface (CLI) ---
 def cli():
     tracker = MoveTrackerClass()
     p = argparse.ArgumentParser()
@@ -77,7 +123,7 @@ def cli():
         print(f"2. Duel Mode ({CUSTOM_ENV})")
         
         while True:
-            choice = input("Enter your choice (1 or 2, or press Enter for 1): ").strip()
+            choice = input("Enter your choice (1 or 2): ").strip()
             if not choice or choice == '1':
                 print(f"Selected: {DEFAULT_ENV}")
                 break
@@ -86,10 +132,9 @@ def cli():
                 print(f"Selected: {CUSTOM_ENV}")
                 break
             else:
-                print("Invalid choice. Please enter 1 or 2.")
+                print("Invalid choice.")
 
-    #(13 Nov 2025) --- AGENT AND ENVIRONMENT SETUP ---
-    # Agents initialization
+    # --- Setup Game ---
     agents = {
         0: build_agent(args.p0, args.prompt),
         1: build_agent(args.p1, args.prompt),
@@ -130,19 +175,18 @@ def cli():
     done = False
     turn = 0
     print("\n--- Stratego LLM Match Started ---")
-    print(f"Player 1 Agent: {agents[0].model_name} (Prompt: {args.prompt})")
-    print(f"Player 2 Agent: {agents[1].model_name} (Prompt: {args.prompt})\n")
+    print(f"Player 1 Agent: {agents[0].model_name}")
+    print(f"Player 2 Agent: {agents[1].model_name}\n")
     while not done:
         turn += 1
         player_id, observation = env.get_observation()
-        # Determine agent name and details for current player
         current_agent = agents[player_id]
-        player_display = f"Player {player_id}"
+        player_display = f"Player {player_id+1}"
         model_name = current_agent.model_name
         
         # --- NEW LOGGING FOR TURN, PLAYER, AND MODEL ---
         print(f"\n>>>> TURN {turn}: {player_display} ({model_name}) is moving...")
-        
+
         if (args.size == 10):
             print_board(observation)
         else:
@@ -152,91 +196,110 @@ def cli():
             current_agent.set_move_history(move_history[player_id][-10:])
             observation = observation + tracker.to_prompt_string(player_id)
             print(tracker.to_prompt_string(player_id))
-            action = current_agent(observation)
-            # --- NEW LOGGING FOR STRATEGY/MODEL DECISION ---
-            print(f"  > AGENT DECISION: {model_name} -> {action}")
-            print(f"  > Strategy/Model: Ollama Agent (T={current_agent.temperature}, Prompt='{args.prompt}')")
+        
+        # The agent (LLM) generates the action
+        action = current_agent(observation)
+        
+        # --- NEW LOGGING FOR STRATEGY/MODEL DECISION ---
+        print(f"  > AGENT DECISION: {model_name} -> {action}")
+        print(f"  > Strategy/Model: Ollama Agent (T={current_agent.temperature}, Prompt='{args.prompt}')")
 
-            # Extract move details for logging
-            import re
-            move_pattern = r'\[([A-J]\d+)\s+([A-J]\d+)\]'
-            match = re.search(move_pattern, action)
-            src_pos = match.group(1) if match else ""
-            dst_pos = match.group(2) if match else ""
-            
-            # Get piece type from board (simplified extraction)
-            piece_type = ""
-            if src_pos and hasattr(env, 'game_state') and hasattr(env.game_state, 'board'):
-                try:
-                    # Parse position like "D4" -> row=3, col=3
-                    col = ord(src_pos[0]) - ord('A')
-                    row = int(src_pos[1:]) - 1
-                    piece = env.game_state.board[row][col]
-                    if piece and hasattr(piece, 'rank_name'):
-                        piece_type = piece.rank_name
-                except:
-                    piece_type = "Unknown"
-            
-            # Check if this is a repeated move (last 3 moves)
-            was_repeated = False
-            recent_moves = [m["move"] for m in move_history[player_id][-3:]]
-            if action in recent_moves:
-                was_repeated = True
-            
-            # Record this move in history
-            move_history[player_id].append({
-                "turn": turn,
-                "move": action,
-                "text": f"Turn {turn}: You played {action}"
-            })
+        # Extract move details for logging
+        move_pattern = r'\[([A-J]\d+)\s+([A-J]\d+)\]'
+        match = re.search(move_pattern, action)
+        src_pos = match.group(1) if match else ""
+        dst_pos = match.group(2) if match else ""
+        
+        # Get piece type from board (simplified extraction)
+        piece_type = ""
+        if src_pos and hasattr(env, 'game_state') and hasattr(env.game_state, 'board'):
+            try:
+                # Parse position like "D4" -> row=3, col=3
+                col = ord(src_pos[0]) - ord('A')
+                row = int(src_pos[1:]) - 1
+                piece = env.game_state.board[row][col]
+                if piece and hasattr(piece, 'rank_name'):
+                    piece_type = piece.rank_name
+            except:
+                piece_type = "Unknown"
+        
+        # Check if this is a repeated move (last 3 moves)
+        was_repeated = False
+        recent_moves = [m["move"] for m in move_history[player_id][-3:]]
+        if action in recent_moves:
+            was_repeated = True
+        
+        # Record this move in history
+        move_history[player_id].append({
+            "turn": turn,
+            "move": action,
+            "text": f"Turn {turn}: You played {action}"
+        })
 
-            done, outcome_info = env.step(action=action)
-            
-            # Extract outcome from environment observation
-            outcome = "move"
-            captured = ""
-            if outcome_info and len(outcome_info) > 1:
-                obs_text = str(outcome_info[1]) if len(outcome_info) > 1 else ""
-                if "won" in obs_text.lower() or "captured" in obs_text.lower():
-                    outcome = "won_battle"
-                    # Try to extract captured piece name
-                    cap_match = re.search(r'captured.*?(\w+)', obs_text, re.IGNORECASE)
-                    if cap_match:
-                        captured = cap_match.group(1)
-                elif "lost" in obs_text.lower() or "defeated" in obs_text.lower():
-                    outcome = "lost_battle"
-                elif "draw" in obs_text.lower() or "tie" in obs_text.lower():
-                    outcome = "draw"
-                elif "invalid" in obs_text.lower() or "illegal" in obs_text.lower():
-                    outcome = "invalid"
+        done, outcome_info = env.step(action=action)
+        
+        # Extract outcome from environment observation
+        outcome = "move"
+        captured = ""
+        if outcome_info and len(outcome_info) > 1:
+            obs_text = str(outcome_info[1]) if len(outcome_info) > 1 else ""
+            if "won" in obs_text.lower() or "captured" in obs_text.lower():
+                outcome = "won_battle"
+                # Try to extract captured piece name
+                cap_match = re.search(r'captured.*?(\w+)', obs_text, re.IGNORECASE)
+                if cap_match:
+                    captured = cap_match.group(1)
+            elif "lost" in obs_text.lower() or "defeated" in obs_text.lower():
+                outcome = "lost_battle"
+            elif "draw" in obs_text.lower() or "tie" in obs_text.lower():
+                outcome = "draw"
+            elif "invalid" in obs_text.lower() or "illegal" in obs_text.lower():
+                outcome = "invalid"
 
-            done, info = env.step(action=action)
+        done, info = env.step(action=action)
 
-            event = info.get("event") if isinstance(info, dict) else None
-            extra = info.get("detail") if isinstance(info, dict) else None
+        event = info.get("event") if isinstance(info, dict) else None
+        extra = info.get("detail") if isinstance(info, dict) else None
 
-            tracker.record(
-                player=player_id,
-                move=action,
-                event=event,
-                extra=extra
-            )
+        tracker.record(
+            player=player_id,
+            move=action,
+            event=event,
+            extra=extra
+        )
 
-            logger.log_move(turn=turn,
-                                player=player_id,
-                                model_name=getattr(current_agent, "model_name", "unknown"),
-                                move=action,
-                                src=src_pos,
-                                dst=dst_pos,
-                                piece_type=piece_type,
-                                outcome=outcome,
-                                captured=captured,
-                                was_repeated=was_repeated)
+        logger.log_move(turn=turn,
+                            player=player_id,
+                            model_name=getattr(current_agent, "model_name", "unknown"),
+                            move=action,
+                            src=src_pos,
+                            dst=dst_pos,
+                            piece_type=piece_type,
+                            outcome=outcome,
+                            captured=captured,
+                            was_repeated=was_repeated)
 
 
+    # --- Game Over & Winner Announcement ---
     rewards, game_info = env.close()
     print("\n" + "="*50)
     print("--- GAME OVER ---")
+    
+    # Logic to declare the specific winner based on rewards
+    # Rewards are usually {0: 1, 1: -1} (P0 Wins) or {0: -1, 1: 1} (P1 Wins)
+    p0_score = rewards.get(0, 0)
+    p1_score = rewards.get(1, 0)
+
+    if p0_score > p1_score:
+        print(f"\n🏆 * * * PLAYER 0 WINS! * * * 🏆")
+        print(f"Agent: {agents[0].model_name}")
+    elif p1_score > p0_score:
+        print(f"\n🏆 * * * PLAYER 1 WINS! * * * 🏆")
+        print(f"Agent: {agents[1].model_name}")
+    else:
+        print(f"\n🤝 * * * IT'S A DRAW! * * * 🤝")
+
+    print("\nDetails:")
     print(f"Final Rewards: {rewards}")
     print(f"Game Info: {game_info}")
     

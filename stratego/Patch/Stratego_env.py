@@ -64,25 +64,25 @@ class StrategoDuelEnv(ta.Env):
             "\n"
             "### Gameplay Instructions\n"
             "1. **Movement Rules:**\n"
-            " - On your turn, you can move one piece by one step to an adjacent square (up, down, left, or right) that is already occupied with your pieces.\n"
-            " - Example: A piece can move from A0 to B0 or A0 to A1 if B0 and A1 are not placed with the player's own pieces.\n"
-            " - If the selected piece is a Bomb or a Flag, it cannot be moved.\n"
+            "   - On your turn, you can move one piece by one step to an adjacent square (up, down, left, or right) that is already occupied with your pieces.\n"
+            "   - Example: A piece can move from A0 to B0 or A0 to A1 if B0 and A1 are not placed with the player's own pieces.\n"
+            "   - If the selected piece is a Bomb or a Flag, it cannot be moved.\n"
             "2. **Battles:**\n"
-            " - If you move onto a square occupied by an opponent's piece, then a battle will occur:\n"
-            " - The piece with the higher rank wins and eliminates the opponent's piece.\n"
-            " - If the ranks are equal, both pieces are removed from the board.\n"
-            " - **Special Cases:**\n"
-            " - Bombs eliminate most attacking pieces except Miners, which defuse Bombs.\n"
-            " - Spies can defeat the Marshal if the Spy attacks first but lose to all other pieces.\n"
+            "   - If you move onto a square occupied by an opponent's piece, then a battle will occur:\n"
+            "     - The piece with the higher rank wins and eliminates the opponent's piece.\n"
+            "     - If the ranks are equal, both pieces are removed from the board.\n"
+            "     - **Special Cases:**\n"
+            "       - Bombs eliminate most attacking pieces except Miners, which defuse Bombs.\n"
+            "       - Spies can defeat the Marshal if the Spy attacks first but lose to all other pieces.\n"
             "3. **Strategic Goals:**\n"
-            " - Identify your opponent's pieces through their movements and battles.\n"
-            " - Protect your Flag while attempting to capture your opponent's Flag.\n"
-            " - Use Scouts strategically to gain information about your opponent's pieces and attack weak ones.\n"
+            "   - Identify your opponent's pieces through their movements and battles.\n"
+            "   - Protect your Flag while attempting to capture your opponent's Flag.\n"
+            "   - Use Scouts strategically to gain information about your opponent's pieces and attack weak ones.\n"
             "\n"
             "### How to Make a Move:\n"
             "1. Specify the coordinates of the piece you want to move and its destination.\n"
             "2. Use the format: [A0 B0], where A0 is the source position, and B0 is the destination.\n"
-            " - Example: To move a piece from row 0, column 0 to row 1, column 0, input [A0 B0].\n"
+            "   - Example: To move a piece from row 0, column 0 to row 1, column 0, input [A0 B0].\n"
             "3. Ensure the destination is valid according to the movement rules above.\n"
             "\n"
             "### Important Notes:\n"
@@ -264,7 +264,7 @@ class StrategoDuelEnv(ta.Env):
 
         res = []
         # Update column headers to range from 0 to 5 (size 6)
-        column_headers = "  " + " ".join([f"{i:>3}" for i in range(BOARD_SIZE)])  
+        column_headers = "   " + " ".join([f"{i:>3}" for i in range(BOARD_SIZE)])  
         res.append(column_headers + "\n")
 
         for row in range(BOARD_SIZE): # Iterate over 6 rows
@@ -272,14 +272,14 @@ class StrategoDuelEnv(ta.Env):
             row_render = [f"{row_label:<3}"]  # Add row label with fixed width
             for col in range(BOARD_SIZE): # Iterate over 6 columns
                 if (row, col) in self.lakes:
-                    cell = " ~ "  # Lakes
+                    cell = "  ~ "  # Lakes
                 elif self.board[row][col] is None:
-                    cell = " . "  # Empty space
+                    cell = "  . "  # Empty space
                 else:
                     piece = self.board[row][col]
                     # Handle the case where the piece is the lake marker "~"
                     if piece == "~":
-                        cell = " ~ "
+                        cell = "  ~ "
                     else:
                         abbreviation = piece_abbreviations.get(piece['rank'], piece['rank'][:2].upper())
                         if full_board:
@@ -288,7 +288,7 @@ class StrategoDuelEnv(ta.Env):
                             displayed_piece = abbreviation.upper()
                             cell = f" {displayed_piece} "
                         else:
-                            cell = " ? "  # Hidden opponent piece
+                            cell = "  ? "  # Hidden opponent piece
                 row_render.append(cell)
 
             res.append("".join(row_render) + "\n")
