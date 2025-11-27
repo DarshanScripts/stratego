@@ -1,20 +1,33 @@
 from stratego.prompt_optimizer import improve_prompt
 import os
 import argparse
+#updated import statement
+#(13 Nov 2025) for import sys: it helps in managing system-specific parameters and functions.
+import sys
 #from stratego.env.stratego_env import StrategoEnv
 from stratego.custom_env import CustomStrategoEnv as CustomEnv
 from stratego.utils.game_move_tracker import GameMoveTracker as MoveTrackerClass
-from stratego.env.stratego_env import StrategoEnv
+from stratego.env.stratego_env_2 import StrategoEnv
 from stratego.prompts import get_prompt_pack
 from stratego.utils.parsing import extract_board_block_lines
 from stratego.game_logger import GameLogger
 
-def build_agent(spec: str,  prompt_name: str):
+#Revised to set temperature(13 Nov 2025)
+def build_agent(spec: str, prompt_name: str):
     kind, name = spec.split(":", 1)
     if kind == "ollama":
         from stratego.models.ollama_model import OllamaAgent
-        return OllamaAgent(model_name=name, temperature=0.2, num_predict=32,
-                           prompt_pack=get_prompt_pack(prompt_name))
+        # Define the temperature value explicitly
+        AGENT_TEMPERATURE = 0.2
+        
+        # OllamaAgent holds the model_name, temperature, and prompt_pack
+        agent = OllamaAgent(model_name=name, temperature=AGENT_TEMPERATURE, num_predict=32,
+                            prompt_pack=get_prompt_pack(prompt_name))
+        
+        # FIX: Attach the temperature attribute to the agent object so it can be logged later
+        agent.temperature = AGENT_TEMPERATURE
+        
+        return agent
     if kind == "hf":
         from stratego.models.hf_model import HFLocalAgent
         return HFLocalAgent(model_id=name, prompt_pack=prompt_name)
@@ -24,6 +37,8 @@ def build_agent(spec: str,  prompt_name: str):
 def print_board(observation: str, size: int = 10):
     block = extract_board_block_lines(observation, size)
     if block:
+        # Print a separator for readability(13 Nov 2025)
+        print("\n" + "="*50)
         print("\n".join(block))
 
 
@@ -33,6 +48,19 @@ def cli():
     p = argparse.ArgumentParser()
     p.add_argument("--p0", default="ollama:phi3:3.8b")
     p.add_argument("--p1", default="ollama:gemma3:1b")
+
+    # UPDATED HELP TEXT to explain how this parameter relates to VRAM utilization
+    # For large models (120B, 70B), you MUST set this value based on available VRAM(13 Nov 2025)
+    # UPDATED GPU arguments for VRAM control (now defaults to CPU-only)
+    p.add_argument("--p0-num-gpu", type=int, default=0,
+                    help="Number of GPU layers to offload for Player 0. Default is 0 (CPU-only mode). Use a positive number (e.g., 50) to offload layers to GPU/VRAM, or 999 for maximum GPU use.")
+    p.add_argument("--p1-num-gpu", type=int, default=0,
+                    help="Number of GPU layers to offload for Player 1. Default is 0 (CPU-only mode). Use a positive number (e.g., 40) to offload layers to GPU/VRAM, or 999 for maximum GPU use.")
+    
+    #(13 Nov 2025) NOTE: Default env_id is used as a flag to trigger the interactive menu
+    DEFAULT_ENV = "Stratego-v0"
+    CUSTOM_ENV = "Stratego-duel"
+
     p.add_argument("--prompt", default="base", help="Prompt preset name (e.g. base|concise|adaptive)")
     p.add_argument("--env_id", default="Stratego-v0", help="TextArena environment id")
     p.add_argument("--log-dir", default="logs", help="Directory for per-game CSV logs")
@@ -42,6 +70,26 @@ def cli():
 
     args = p.parse_args()
 
+    #(13 Nov 2025) --- INTERACTIVE ENVIRONMENT SELECTION ---
+    if args.env_id == DEFAULT_ENV:
+        print("\n--- Stratego Version Selection ---")
+        print(f"1. Standard Game ({DEFAULT_ENV})")
+        print(f"2. Duel Mode ({CUSTOM_ENV})")
+        
+        while True:
+            choice = input("Enter your choice (1 or 2, or press Enter for 1): ").strip()
+            if not choice or choice == '1':
+                print(f"Selected: {DEFAULT_ENV}")
+                break
+            elif choice == '2':
+                args.env_id = CUSTOM_ENV
+                print(f"Selected: {CUSTOM_ENV}")
+                break
+            else:
+                print("Invalid choice. Please enter 1 or 2.")
+
+    #(13 Nov 2025) --- AGENT AND ENVIRONMENT SETUP ---
+    # Agents initialization
     agents = {
         0: build_agent(args.p0, args.prompt),
         1: build_agent(args.p1, args.prompt),
@@ -76,22 +124,35 @@ def cli():
                     role="initial"
                 )
 
-        done = False
-        turn = 0
-        while not done:
-            player_id, observation = env.get_observation()
-            if (args.size == 10):
-                print_board(observation)
-            else:
-                print_board(observation, args.size)
-            
+    done = False
+    turn = 0
+    print("\n--- Stratego LLM Match Started ---")
+    print(f"Player 1 Agent: {agents[0].model_name} (Prompt: {args.prompt})")
+    print(f"Player 2 Agent: {agents[1].model_name} (Prompt: {args.prompt})\n")
+    while not done:
+        turn += 1
+        player_id, observation = env.get_observation()
+        # Determine agent name and details for current player
+        current_agent = agents[player_id]
+        player_display = f"Player {player_id}"
+        model_name = current_agent.model_name
+        
+        # --- NEW LOGGING FOR TURN, PLAYER, AND MODEL ---
+        print(f"\n>>>> TURN {turn}: {player_display} ({model_name}) is moving...")
+        
+        if (args.size == 10):
+            print_board(observation)
+        else:
+            print_board(observation, args.size)
+
             # Pass recent move history to agent
-            agents[player_id].set_move_history(move_history[player_id][-10:])
+            current_agent.set_move_history(move_history[player_id][-10:])
             observation = observation + tracker.to_prompt_string(player_id)
             print(tracker.to_prompt_string(player_id))
-            action = agents[player_id](observation)
-            print(f"{agents[player_id].model_name} -> {action}")
-            print(f"Turn: {turn}")
+            action = current_agent(observation)
+            # --- NEW LOGGING FOR STRATEGY/MODEL DECISION ---
+            print(f"  > AGENT DECISION: {model_name} -> {action}")
+            print(f"  > Strategy/Model: Ollama Agent (T={current_agent.temperature}, Prompt='{args.prompt}')")
 
             # Extract move details for logging
             import re
@@ -160,7 +221,7 @@ def cli():
 
             logger.log_move(turn=turn,
                                 player=player_id,
-                                model_name=getattr(agents[player_id], "model_name", "unknown"),
+                                model_name=getattr(current_agent, "model_name", "unknown"),
                                 move=action,
                                 src=src_pos,
                                 dst=dst_pos,
@@ -169,10 +230,12 @@ def cli():
                                 captured=captured,
                                 was_repeated=was_repeated)
 
-            turn += 1
 
     rewards, game_info = env.close()
-    print("Game finished.", rewards, game_info)
+    print("\n" + "="*50)
+    print("--- GAME OVER ---")
+    print(f"Final Rewards: {rewards}")
+    print(f"Game Info: {game_info}")
     
     num_games = len([f for f in os.listdir(args.log_dir) if f.endswith(".csv")])
     if num_games % 1 == 0:
