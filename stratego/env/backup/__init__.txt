@@ -1,1 +1,2 @@
 register_with_versions(id="Stratego-duel", entry_point="textarena.envs.StrategoDuel.env:StrategoDuelEnv", wrappers={"default": DEFAULT_WRAPPERS, "-train": BOARDGAME_WRAPPERS})
+register_with_versions(id="Stratego-custom", entry_point="textarena.envs.StrategoCustom.env:StrategoCustomEnv", wrappers={"default": DEFAULT_WRAPPERS, "-train": BOARDGAME_WRAPPERS})

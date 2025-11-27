@@ -65,7 +65,7 @@
     * `export OLLAMA_HOST=0.0.0.0:{your_host}`
     * `export PATH="/scratch/{user}/ollama_bin:$PATH"` to set paths for running Ollama.
     * `/scratch/{user}/ollama_bin/ollama serve` to start the server.
-* Once you are connected to Ollama running server, then you can with this command `curl -s http://127.0.0.1:{your_host}/api/tags` to check what kind of LLMs are available now in the server.
+* Once you are connected to Ollama running server, then you can with this command `curl -s http://127.0.0.1:{your_host}/api/tags` or `curl -s http://127.0.0.1:{your_host}/api/tags | jq -r '.models[].name'` to check what kind of LLMs are available now in the server.
 * `curl -X POST http://127.0.0.1:{your_host}/api/pull -H 'Content-Type: application/json' -d '{"name":"{model_name}"}'` Use this command to request the server to download such LLM which are supported by Ollama.
 * Those curl commands does not fully function or need extra words if you are going to run those in Powershell, so just open another terminal with Linux(you can use Ubuntu as well), connect to ssh -L, and execute those curl commands, for checking and pulling LLMs.
 * You can kill the server with `kill $(cat /scratch/{user}/ollama_serve.pid)` or `pkill -f "/scratch/{user}/ollama_bin/ollama serve"`.
