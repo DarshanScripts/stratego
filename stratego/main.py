@@ -1,9 +1,7 @@
 import argparse
 import re
 import time
-from stratego.prompt_optimizer import improve_prompt
-
-import os
+# from stratego.prompt_optimizer import improve_prompt
 from stratego.env.stratego_env import StrategoEnv
 from stratego.prompts import get_prompt_pack
 from stratego.utils.parsing import extract_board_block_lines
@@ -147,10 +145,10 @@ def cli():
                 print_board(observation)
             else:
                 print_board(observation, args.size)
-                # Pass recent move history to agent
-                current_agent.set_move_history(move_history[player_id][-10:])
-                observation = observation + tracker.to_prompt_string(player_id)
-                print(tracker.to_prompt_string(player_id))
+            # Pass recent move history to agent
+            current_agent.set_move_history(move_history[player_id][-10:])
+            observation = observation + tracker.to_prompt_string(player_id)
+            print(tracker.to_prompt_string(player_id))
             
             # The agent (LLM) generates the action
             action = current_agent(observation)
@@ -161,21 +159,21 @@ def cli():
             # Extract move details for logging
             move_pattern = r'\[([A-J]\d+)\s+([A-J]\d+)\]'
             match = re.search(move_pattern, action)
-            src_pos = match.group(1) if match else ""
-            dst_pos = match.group(2) if match else ""
+            # src_pos = match.group(1) if match else ""
+            # dst_pos = match.group(2) if match else ""
             
-            # Get piece type from board (simplified extraction)
-            piece_type = ""
-            if src_pos and hasattr(env, 'game_state') and hasattr(env.game_state, 'board'):
-                try:
-                    # Parse position like "D4" -> row=3, col=3
-                    col = ord(src_pos[0]) - ord('A')
-                    row = int(src_pos[1:]) - 1
-                    piece = env.game_state.board[row][col]
-                    if piece and hasattr(piece, 'rank_name'):
-                        piece_type = piece.rank_name
-                except:
-                    piece_type = "Unknown"
+            # # Get piece type from board (simplified extraction)
+            # piece_type = ""
+            # if src_pos and hasattr(env, 'game_state') and hasattr(env.game_state, 'board'):
+            #     try:
+            #         # Parse position like "D4" -> row=3, col=3
+            #         col = ord(src_pos[0]) - ord('A')
+            #         row = int(src_pos[1:]) - 1
+            #         piece = env.game_state.board[row][col]
+            #         if piece and hasattr(piece, 'rank_name'):
+            #             piece_type = piece.rank_name
+            #     except:
+            #         piece_type = "Unknown"
             
             # Check if this is a repeated move (last 3 moves)
             was_repeated = False
@@ -191,6 +189,12 @@ def cli():
             })
 
             done, info = env.step(action=action)
+            
+            # Process move details for logging
+            move_details = process_move(
+                action=action,
+                board=env.env.board
+            )
             
             # Extract outcome from environment observation
             outcome = "move"
@@ -224,9 +228,9 @@ def cli():
                                 player=player_id,
                                 model_name=getattr(current_agent, "model_name", "unknown"),
                                 move=action,
-                                src=src_pos,
-                                dst=dst_pos,
-                                piece_type=piece_type,
+                                src=move_details.src_pos,
+                                dst=move_details.dst_pos,
+                                piece_type=move_details.piece_type,
                                 outcome=outcome,
                                 captured=captured,
                                 was_repeated=was_repeated)
@@ -274,10 +278,10 @@ def cli():
         total_turns=turn - 1
     )
     
-    num_games = len([f for f in os.listdir(args.log_dir) if f.endswith(".csv")])
-    if num_games % 1 == 0:
-        print("Running prompt improvement based on recent games...")
-        improve_prompt(args.log_dir, "stratego/prompts/current_prompt.txt", model_name="phi3:14b")
+    # num_games = len([f for f in os.listdir(args.log_dir) if f.endswith(".csv")])
+    # if num_games % 1 == 0:
+    #     print("Running prompt improvement based on recent games...")
+    #     improve_prompt(args.log_dir, "stratego/prompts/current_prompt.txt", model_name="phi3:14b")
 
 
 if __name__ == "__main__":
