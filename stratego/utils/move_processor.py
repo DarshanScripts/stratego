@@ -11,14 +11,6 @@ from typing import Optional, Tuple, List
 from dataclasses import dataclass
 
 
-# Piece rank mapping (higher = stronger, except special cases)
-PIECE_RANKS = {
-    'Flag': 0, 'Spy': 1, 'Scout': 2, 'Miner': 3, 'Sergeant': 4,
-    'Lieutenant': 5, 'Captain': 6, 'Major': 7, 'Colonel': 8,
-    'General': 9, 'Marshal': 10, 'Bomb': 11
-}
-
-
 @dataclass
 class MoveDetails:
     """Parsed move information for logging."""

@@ -161,7 +161,7 @@ def format_stats_for_llm(stats: GameStats, player_to_analyze: int) -> str:
         lines.append(f"  {piece}: {count} moves ({pct:.1f}%)")
     
     # Most repeated moves
-    lines.append("\n--- REPEATEDO MVES ---")
+    lines.append("\n--- REPEATED MOVES ---")
     top_repeated = sorted(ps.move_counts.items(), key=lambda x: -x[1])[:5]
     for move, count in top_repeated:
         if count >= 3:

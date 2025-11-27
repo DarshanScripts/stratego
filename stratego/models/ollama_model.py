@@ -1,10 +1,7 @@
 import os, random
 from typing import Optional
 from langchain_ollama import ChatOllama
-from langchain_core.messages import SystemMessage, HumanMessage
-
 import requests
-import json
 
 from .base import AgentLike
 from ..utils.parsing import (
