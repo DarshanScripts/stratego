@@ -14,19 +14,21 @@ class PromptPack:
 
 BASE = PromptPack(
     name="base",
-    # This is what original STANDARD_GAME_PROMPT from main code was.
     system=(
-        "You are a competitive Stratego-playing agent.\n"
-        "Strictly follow the rules. Output exactly ONE legal move in the format [SRC DST] "
-        "and nothing else."
+        "You are a Stratego-playing agent.\n"
+        "You MUST output exactly ONE move and NOTHING ELSE.\n"
+        "The move MUST be in the format [A0 B0].\n"
+        "The move MUST be one of the legal moves listed under 'Available Moves:'.\n"
     ),
-    # This is guidance prompt from main code.
     guidance_template=(
         "{board_slice}\n\n"
-        "INSTRUCTIONS:\n"
-        "- Choose exactly ONE move that appears in 'Available Moves:' above.\n"
-        "- Do NOT choose any move listed under FORBIDDEN (if present).\n"
-        "- Output ONLY the move in format [A0 B0]. No other text.\n"
+        "RULES:\n"
+        "- Use ONLY the moves listed in 'Available Moves:'.\n"
+        "- Output exactly one move in the format [A0 B0].\n"
+        "- No commentary. No extra spaces or lines.\n"
+        "- If multiple moves seem good, choose any ONE of them.\n"
+        "\n"
+        "ANSWER:\n"
     ),
 )
 
@@ -37,16 +39,14 @@ BASE = PromptPack(
 CONCISE = PromptPack(
     name="concise",
     system="Stratego agent. Output exactly one legal move like [SRC DST].",
-    guidance_template=( "{board_slice}\n\n"
-        "INSTRUCTIONS (CONCISE):\n"
-        "- Pick exactly ONE move from 'Available Moves:'.\n"
-        "- Never pick moves under 'FORBIDDEN'.\n"
-        "- If multiple are equivalent, prefer (in order): capture > safe advance > reposition.\n"
-        "- Output ONLY the move as [SRC DST] with no extra text.\n"
-        "- Do not explain, justify, or comment on your choice. "
-         "- Do not output anything else (no punctuation, no text, no newlines)."
-        "- If no legal moves exist, output [PASS]."
-
+    guidance_template=(
+        "{board_slice}\n\n"
+        "INSTRUCTIONS:\n"
+        "- Choose exactly ONE move from the 'Available Moves:' section above.\n"
+        "- Do NOT choose any move listed under 'FORBIDDEN' (if present).\n"
+        "- Prefer captures that are likely to win, or otherwise prefer safe advancement.\n"
+        "- Avoid exposing high-value pieces to obvious captures.\n"
+        "- Output ONLY the move in format [A0 B0] and nothing else.\n"
     ),
 )
 
@@ -57,39 +57,16 @@ ADAPTIVE = PromptPack(
         "You are an expert Stratego agent. Consider captures, threats, and safe advancement.\n"
         "Output exactly one legal move [SRC DST]."
     ),
-    guidance_template=("{board_slice}\n\n"
-        "INSTRUCTIONS (ADAPTIVE):\n"
-        "- Choose ONE move from 'Available Moves:' only (never from 'FORBIDDEN').\n"
-        "- Evaluate each candidate using these priorities (in order):\n"
-        " TACTICAL GAINS: Guaranteed favorable capture (win by rank or Miner vs Bomb).\n"
-        " SAFETY: Prefer moves ending on squares not capturable next turn by KNOWN/INFERRED enemy.\n"
-        " MISSION ROLES: Scouts to probe/open lanes; Miners toward suspected bombs; Spy only to attack the Marshal by initiating; protect own Flag sector.\n"
-        " SPACE & PRESSURE: Advance pieces that increase central control or threaten valuable targets without overexposing high ranks.\n"
-        " INFORMATION: When no safe gain exists, prefer low-risk scouting over revealing high ranks.\n"
-        "- Tie-breakers (apply in order):\n"
-        "  Highest expected material gain this turn.\n"
-        "  Lowest immediate recapture risk.\n"
-        "  Improves mobility/lines (opens files, avoids lakes/choke).\n"
-        "  If still tied, choose the lexicographically first [SRC DST].\n"
-        "- Output ONLY the selected move in format [SRC DST]. No commentary.\n"
+    guidance_template=(
+        "{board_slice}\n\n"
+        "GUIDANCE (ADAPTIVE):\n"
+        "- Consider immediate captures first: prefer trades that win material or remove high-value opponents.\n"
+        "- Assess risk: avoid moves that expose your high-rank pieces to probable capture.\n"
+        "- Prioritize safe advancement and creating or denying threats when captures are unclear.\n"
+        "- Respect 'FORBIDDEN' moves (do not choose them) and choose only from 'Available Moves:'.\n"
+        "- If multiple moves are comparable, prefer those that increase mobility or secure key squares.\n"
+        "- Output ONLY the chosen move in format [A0 B0] and nothing else.\n"
     ),
-
-)
-
-AGGRESSIVE = PromptPack(
-    name="aggressive",
-    system=(
-        "You are an aggressive Stratego agent focused on capturing opponent pieces quickly.\n"
-        "Output exactly one legal move [SRC DST]."
-    ),
-    guidance_template=("{board_slice}\n\n"
-        "INSTRUCTIONS (AGGRESSIVE):\n" 
-         "INSTRUCTIONS (choose exactly one move):\n"
-        "1) If any Available Move captures an opponent piece, choose the capture that removes the highest-ranking opponent piece.\n"
-        "2) Otherwise choose a move that reduces Manhattan distance to the opponent's Flag or moves your front line forward.\n"
-        "3) Avoid moves that recreate a previous board position twice in a row; prefer the second-best legal move in that case.\n"
-        "Output EXACTLY one move in format [A0 B0] and nothing else."),
-
 )
 
 _REGISTRY: Dict[str, PromptPack] = {

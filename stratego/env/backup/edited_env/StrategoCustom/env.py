@@ -4,7 +4,7 @@ from typing import Any, Dict, Optional, Tuple
 import textarena as ta
 
 
-class CustomStrategoEnv(ta.Env):
+class StrategoCustomEnv(ta.Env):
     """
     A size-configurable Stratego environment that extends the original TextArena implementation.
     It overrides only what depends on board size and initial setup, while keeping all battle

@@ -346,9 +346,12 @@ register_with_versions(id="SpellingBee-v0-large", entry_point="textarena.envs.Sp
 # SpiteAndMalice [2 Player]
 register_with_versions(id="SpiteAndMalice-v0", entry_point="textarena.envs.SpiteAndMalice.env:SpiteAndMaliceEnv", wrappers={"default": DEFAULT_WRAPPERS, "-train": BOARDGAME_WRAPPERS})
 
-# Stratego [2 Player]
+# Stratego [ 2 Player ]
 register_with_versions(id="Stratego-v0", entry_point="textarena.envs.Stratego.env:StrategoEnv", wrappers={"default": DEFAULT_WRAPPERS, "-train": BOARDGAME_WRAPPERS})
+# Stratego-dual [ 2 Player ]
 register_with_versions(id="Stratego-duel", entry_point="textarena.envs.StrategoDuel.env:StrategoDuelEnv", wrappers={"default": DEFAULT_WRAPPERS, "-train": BOARDGAME_WRAPPERS})
+# Stratego-custom [ 2 Player ]
+register_with_versions(id="Stratego-custom", entry_point="textarena.envs.StrategoCustom.env:StrategoCustomEnv", wrappers={"default": DEFAULT_WRAPPERS, "-train": BOARDGAME_WRAPPERS})
 
 # Tak [2 Player]
 register_with_versions(id="Tak-v0", entry_point="textarena.envs.Tak.env:TakEnv", wrappers={"default": [LLMObservationWrapper], "-train": [GameMessagesAndCurrentBoardObservationWrapper]}, board_size=4, stones=15, capstones=1)
