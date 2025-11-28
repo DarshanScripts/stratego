@@ -7,7 +7,6 @@ import os
 import json
 import shutil
 from datetime import datetime
-from typing import Optional
 
 
 class PromptManager:

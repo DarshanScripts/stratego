@@ -1,7 +1,7 @@
-# stratego/logging.py
+# stratego/game_logger.py
 from __future__ import annotations
 import csv, os, datetime
-from typing import Optional, Dict, Any
+from typing import Optional
 
 
 class GameLogger:
