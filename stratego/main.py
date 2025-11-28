@@ -89,8 +89,8 @@ def cli():
                 print(f"Selected: {DUEL_ENV}")
                 break
             elif choice == '3':
-                board = input("Please enter your custom board size 6, 8, or 10: ").strip()
-                if board in ['6', '8', '10']:
+                board = input("Please enter your custom board size in rang of 6~10: ").strip()
+                if board in ['6', '7', '8', '9', '10']:
                     args.env_id = CUSTOM_ENV
                     args.size = int(board)
                     print(f"Selected: {CUSTOM_ENV} with size {args.size}x{args.size}")
@@ -132,7 +132,6 @@ def cli():
         print(f"Player 1 Agent: {agents[0].model_name}")
         print(f"Player 2 Agent: {agents[1].model_name}\n")
         while not done:
-            turn += 1
             player_id, observation = env.get_observation()
             current_agent = agents[player_id]
             player_display = f"Player {player_id+1}"
@@ -175,11 +174,11 @@ def cli():
             #     except:
             #         piece_type = "Unknown"
             
-            # Check if this is a repeated move (last 3 moves)
-            was_repeated = False
-            recent_moves = [m["move"] for m in move_history[player_id][-3:]]
-            if action in recent_moves:
-                was_repeated = True
+            # # Check if this is a repeated move (last 3 moves)
+            # was_repeated = False
+            # recent_moves = [m["move"] for m in move_history[player_id][-3:]]
+            # if action in recent_moves:
+            #     was_repeated = True
             
             # Record this move in history
             move_history[player_id].append({
@@ -196,23 +195,23 @@ def cli():
                 board=env.env.board
             )
             
-            # Extract outcome from environment observation
-            outcome = "move"
-            captured = ""
-            if info and len(info) > 1:
-                obs_text = str(info[1]) if len(info) > 1 else ""
-                if "won" in obs_text.lower() or "captured" in obs_text.lower():
-                    outcome = "won_battle"
-                    # Try to extract captured piece name
-                    cap_match = re.search(r'captured.*?(\w+)', obs_text, re.IGNORECASE)
-                    if cap_match:
-                        captured = cap_match.group(1)
-                elif "lost" in obs_text.lower() or "defeated" in obs_text.lower():
-                    outcome = "lost_battle"
-                elif "draw" in obs_text.lower() or "tie" in obs_text.lower():
-                    outcome = "draw"
-                elif "invalid" in obs_text.lower() or "illegal" in obs_text.lower():
-                    outcome = "invalid"
+            # # Extract outcome from environment observation
+            # outcome = "move"
+            # captured = ""
+            # if info and len(info) > 1:
+            #     obs_text = str(info[1]) if len(info) > 1 else ""
+            #     if "won" in obs_text.lower() or "captured" in obs_text.lower():
+            #         outcome = "won_battle"
+            #         # Try to extract captured piece name
+            #         cap_match = re.search(r'captured.*?(\w+)', obs_text, re.IGNORECASE)
+            #         if cap_match:
+            #             captured = cap_match.group(1)
+            #     elif "lost" in obs_text.lower() or "defeated" in obs_text.lower():
+            #         outcome = "lost_battle"
+            #     elif "draw" in obs_text.lower() or "tie" in obs_text.lower():
+            #         outcome = "draw"
+            #     elif "invalid" in obs_text.lower() or "illegal" in obs_text.lower():
+            #         outcome = "invalid"
                     
             event = info.get("event") if isinstance(info, dict) else None
             extra = info.get("detail") if isinstance(info, dict) else None
@@ -231,9 +230,11 @@ def cli():
                                 src=move_details.src_pos,
                                 dst=move_details.dst_pos,
                                 piece_type=move_details.piece_type,
-                                outcome=outcome,
-                                captured=captured,
-                                was_repeated=was_repeated)
+                                # outcome=outcome,
+                                # captured=captured,
+                                # was_repeated=was_repeated
+                            )
+            turn += 1
 
 
     # --- Game Over & Winner Announcement ---
