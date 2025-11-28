@@ -134,11 +134,18 @@ class StrategoDuelEnv(ta.Env):
             self.state.set_invalid_move(
                 reason=f"Invalid format '{action}'. Use [A0 B0]."
             )
+            return self.state.step()
         else:
             sr = ord(match.group(1).upper()) - 65
             sc = int(match.group(2))
             dr = ord(match.group(3).upper()) - 65
             dc = int(match.group(4))
+
+            if not self._validate_move(pid, sr, sc, dr, dc):
+                self.state.set_invalid_move(
+                    reason="Illegal move according to Stratego Duel rules."
+                )
+                return self.state.step()
 
             # Validate basic movement rules
             if self._validate_move(pid, sr, sc, dr, dc):

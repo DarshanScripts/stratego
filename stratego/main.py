@@ -156,8 +156,8 @@ def cli():
             print(f"  > Strategy/Model: Ollama Agent (T={current_agent.temperature}, Prompt='{args.prompt}')")
 
             # Extract move details for logging
-            move_pattern = r'\[([A-J]\d+)\s+([A-J]\d+)\]'
-            match = re.search(move_pattern, action)
+            # move_pattern = r'\[([A-J]\d+)\s+([A-J]\d+)\]'
+            # match = re.search(move_pattern, action)
             # src_pos = match.group(1) if match else ""
             # dst_pos = match.group(2) if match else ""
             
@@ -195,23 +195,31 @@ def cli():
                 board=env.env.board
             )
             
-            # # Extract outcome from environment observation
-            # outcome = "move"
+            # Extract outcome from environment observation
+            outcome = "move"
             # captured = ""
-            # if info and len(info) > 1:
-            #     obs_text = str(info[1]) if len(info) > 1 else ""
-            #     if "won" in obs_text.lower() or "captured" in obs_text.lower():
-            #         outcome = "won_battle"
-            #         # Try to extract captured piece name
-            #         cap_match = re.search(r'captured.*?(\w+)', obs_text, re.IGNORECASE)
-            #         if cap_match:
-            #             captured = cap_match.group(1)
-            #     elif "lost" in obs_text.lower() or "defeated" in obs_text.lower():
-            #         outcome = "lost_battle"
-            #     elif "draw" in obs_text.lower() or "tie" in obs_text.lower():
-            #         outcome = "draw"
-            #     elif "invalid" in obs_text.lower() or "illegal" in obs_text.lower():
-            #         outcome = "invalid"
+            obs_text = ""
+            # if isinstance(info, (list, tuple)) and len(info) > 1:
+            #     obs_text = str(info[1])
+            # else:
+            #     obs_text = str(info)
+            if isinstance(info, (list, tuple)):
+                if 0 <= player_id < len(info):
+                    obs_text = str(info[player_id])
+                else:
+                    obs_text = " ".join(str(x) for x in info)
+            else:
+                obs_text = str(info)
+
+            low = obs_text.lower()
+            if "invalid" in low or "illegal" in low:
+                outcome = "invalid"
+            elif "captured" in low or "won the battle" in low:
+                outcome = "won_battle"
+            elif "lost the battle" in low or "defeated" in low:
+                outcome = "lost_battle"
+            elif "draw" in low or "tie" in low:
+                outcome = "draw"
                     
             event = info.get("event") if isinstance(info, dict) else None
             extra = info.get("detail") if isinstance(info, dict) else None
@@ -230,7 +238,7 @@ def cli():
                                 src=move_details.src_pos,
                                 dst=move_details.dst_pos,
                                 piece_type=move_details.piece_type,
-                                # outcome=outcome,
+                                outcome=outcome,
                                 # captured=captured,
                                 # was_repeated=was_repeated
                             )
@@ -267,6 +275,36 @@ def cli():
     print(f"Final Rewards: {rewards}")
     print(f"Game Info: {game_info}")
     
+    try:
+        invalid_players = [
+            pid for pid, info_dict in (game_info or {}).items()
+            if isinstance(info_dict, dict) and info_dict.get("invalid_move")
+        ]
+        if invalid_players:
+            import csv
+            csv_path = logger.path
+            rows = []
+            fieldnames = None
+
+            with open(csv_path, "r", encoding="utf-8", newline="") as f:
+                reader = csv.DictReader(f)
+                fieldnames = reader.fieldnames
+                for r in reader:
+                    rows.append(r)
+
+            if rows and fieldnames and "outcome" in fieldnames:
+                rows[-1]["outcome"] = "invalid"
+                with open(csv_path, "w", encoding="utf-8", newline="") as f:
+                    writer = csv.DictWriter(f, fieldnames=fieldnames)
+                    writer.writeheader()
+                    writer.writerows(rows)
+
+                print("\n[LOG PATCH] Last move outcome patched to 'invalid' "
+                      f"(player {invalid_players[0]} made an invalid move).")
+                
+    except Exception as e:
+        print(f"[LOG PATCH] Failed to patch CSV outcome: {e}")
+        
     # LLM analyzes the game CSV and updates prompt
     analyze_and_update_prompt(
         csv_path=logger.path,

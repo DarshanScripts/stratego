@@ -22,6 +22,8 @@ class PlayerStats:
     player_id: int
     model_name: str = ""
     total_moves: int = 0
+    valid_moves: int = 0
+    invalid_moves: int = 0
     
     # Piece usage
     moves_by_piece: Dict[str, int] = field(default_factory=dict) # piece_type -> count | number of moves that piece made
@@ -31,6 +33,9 @@ class PlayerStats:
     
     # Direction stats
     directions: Dict[str, int] = field(default_factory=dict)  # N/S/E/W -> count | counts of move directions
+
+    # Invalid moves
+    invalid_moves_by_piece: Dict[str, int] = field(default_factory=dict)
 
 
 @dataclass 
@@ -78,6 +83,7 @@ def parse_csv_to_stats(csv_path: str) -> GameStats:
                 move = row.get('move', '').strip()
                 piece_type = row.get('piece_type', 'Unknown')
                 from_pos = row.get('from_pos', '')
+                outcome = (row.get('outcome') or "").strip().lower()
                 
                 if player not in stats.player_stats:
                     stats.player_stats[player] = PlayerStats(player_id=player)
@@ -85,6 +91,17 @@ def parse_csv_to_stats(csv_path: str) -> GameStats:
                 ps = stats.player_stats[player]
                 ps.total_moves += 1
                 ps.model_name = row.get('model_name', '')
+                
+                if outcome == "invalid":
+                    ps.invalid_moves += 1
+                    if piece_type:
+                        ps.invalid_moves_by_piece[piece_type] = (
+                            ps.invalid_moves_by_piece.get(piece_type, 0) + 1
+                        )
+                    stats.total_turns = max(stats.total_turns, turn)
+                    continue
+                
+                ps.valid_moves += 1
                 
                 # Track piece usage
                 if piece_type:
@@ -143,6 +160,7 @@ def format_stats_for_llm(stats: GameStats, player_to_analyze: int) -> str:
     lines.append(f"Model: {ps.model_name}")
     lines.append(f"Total turns: {stats.total_turns}")
     lines.append(f"Player moves: {ps.total_moves}")
+    lines.append(f"Invalid moves: {ps.invalid_moves}")
     
     # Winner info
     if stats.winner is not None:
@@ -154,14 +172,14 @@ def format_stats_for_llm(stats: GameStats, player_to_analyze: int) -> str:
                 lines.append(f"Loss reason: {stats.loss_reason}")
     
     # Piece usage breakdown
-    lines.append("\n--- PIECE USAGE ---")
+    lines.append("\n--- PIECE USAGE (valid moves only) ---")
     total_piece_moves = sum(ps.moves_by_piece.values()) or 1
     for piece, count in sorted(ps.moves_by_piece.items(), key=lambda x: -x[1])[:8]:
         pct = (count / total_piece_moves) * 100
         lines.append(f"  {piece}: {count} moves ({pct:.1f}%)")
     
     # Most repeated moves
-    lines.append("\n--- REPEATED MOVES ---")
+    lines.append("\n--- REPEATED MOVES (valid moves only) ---")
     top_repeated = sorted(ps.move_counts.items(), key=lambda x: -x[1])[:5]
     for move, count in top_repeated:
         if count >= 3:
@@ -169,7 +187,7 @@ def format_stats_for_llm(stats: GameStats, player_to_analyze: int) -> str:
     
     # Direction analysis
     if ps.directions:
-        lines.append("\n--- MOVE DIRECTIONS ---")
+        lines.append("\n--- MOVE DIRECTIONS (valid moves only) ---")
         total_dir = sum(ps.directions.values()) or 1
         for d in ['N', 'S', 'E', 'W']:
             count = ps.directions.get(d, 0)
@@ -177,6 +195,13 @@ def format_stats_for_llm(stats: GameStats, player_to_analyze: int) -> str:
             direction_name = {'N': 'Forward/North', 'S': 'Backward/South', 
                             'E': 'Right/East', 'W': 'Left/West'}.get(d, d)
             lines.append(f"  {direction_name}: {pct:.1f}%")
+            
+    lines.append("\n--- INVALID MOVES (by piece) ---")
+    if ps.invalid_moves == 0:
+        lines.append("  None.")
+    else:
+        for piece, count in ps.invalid_moves_by_piece.items():
+            lines.append(f"  {piece}: {count} invalid attempts")
     
     return "\n".join(lines)
 
@@ -202,7 +227,12 @@ STRATEGO RULES REMINDER:
 - Miner (rank 3) can defuse Bombs.
 - Spy (rank 1) can defeat Marshal if attacking first.
 - Flag is the objective - capture enemy's Flag to win.
-- Bombs don't move and destroy any piece except Miner.
+- Flag and Bombs cannot move.
+- Cannot move opponent's pieces.
+- Bombs destroy any piece except Miner.
+- In this log, some moves may be marked as 'invalid'. These are ILLEGAL moves that violate Stratego rules
+  (for example, attempting to move a Flag or Bomb, moving in an impossible way, moving upon its own pieces, or trying to move opponent's pieces). Treat these as serious mistakes
+  and explain clearly why they are illegal and how to avoid them.
 
 {stats_summary}
 

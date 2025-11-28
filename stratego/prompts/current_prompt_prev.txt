@@ -11,3 +11,9 @@ OUTPUT:
 - Respond with ONLY the move in format [SRC DST]
 - No explanations, no reasoning, just the move
 - Example: [D4 E4]
+
+
+--- STRATEGIC IMPROVEMENTS (from last game analysis) ---
+• Scout was used for 100% of the moves, but made one invalid attempt: This indicates that Player 1 relied heavily on the Scout piece, which is generally a good strategy for probing enemy positions. However, the illegal move suggests a lack of understanding about the rules or carefulness in selecting moves. To improve, Player 1 should review the Stratego rules regarding legal movements and be more cautious when making moves with the Scout to avoid repeating this mistake.
+• All Bomb moves were made in the backward direction (South): While it's understandable that Player 1 might want to protect their own Flag, placing Bombs too close to their own territory can backfire if the enemy manages to capture them or use them against you. To improve, consider spreading out Bomb placements to create a barrier around both your Flag and enemy probing pieces.
+• Only one valid move was made with other pieces (not Bomb or Scout): This indicates that Player 1 may not be effectively utilizing their entire army. In Stratego, it's important to balance the use of different pieces to maintain a strong offensive and defensive position. To improve, consider diversifying your moves by using other pieces like Miners, Soldiers, or even the Flag (if it's safe to do so) to put pressure on the enemy and capture their Flag before they capture yours.
