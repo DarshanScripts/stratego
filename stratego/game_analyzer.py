@@ -252,8 +252,7 @@ def analyze_and_update_prompt(
     """
     Analyze game with computed stats + LLM and update prompt.
     """
-    from stratego.prompt_manager import PromptManager
-    
+    from stratego.prompt_manager import PromptManager    
     print("\n--- LLM Game Analysis ---")
     print(f"Analyzing: {csv_path}")
     
