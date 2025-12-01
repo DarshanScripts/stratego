@@ -73,7 +73,6 @@ _REGISTRY: Dict[str, PromptPack] = {
     BASE.name: BASE,
     CONCISE.name: CONCISE,
     ADAPTIVE.name: ADAPTIVE,
-    AGGRESSIVE.name: AGGRESSIVE
 }
 
 def get_prompt_pack(name: str | None) -> PromptPack:

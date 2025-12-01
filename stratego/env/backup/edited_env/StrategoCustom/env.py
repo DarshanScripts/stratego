@@ -5,6 +5,8 @@ import textarena as ta
 
 
 class StrategoCustomEnv(ta.Env):
+    
+
     """
     A size-configurable Stratego environment that extends the original TextArena implementation.
     It overrides only what depends on board size and initial setup, while keeping all battle
@@ -13,8 +15,8 @@ class StrategoCustomEnv(ta.Env):
 
     def __init__(self, size: int = 10):
         self.size = size            # store board dimension
-        # super().__init__()          # calls original StrategoEnv constructor
-
+        # super().__init__()        # calls original StrategoEnv constructor
+        
         # Replace the default 10×10 board with custom size
         self.board = [[None for _ in range(size)] for _ in range(size)]
 
@@ -37,46 +39,107 @@ class StrategoCustomEnv(ta.Env):
     def terminal_render_keys(self):
         return ["rendered_board"]
 
-    # -------------------------------------------------------------------------
     # 1) LAKES
-    # -------------------------------------------------------------------------
     def _generate_lakes(self):
-        """Small boards: one lake in the center. Large boards: a 2×2 lake block."""
-        mid = self.size // 2
+        size = self.size
 
-        if self.size >= 8:
-            return [
-                (mid - 1, mid - 1), (mid - 1, mid),
-                (mid,     mid - 1), (mid,     mid)
-            ]
+        # special case (6x6), only 2 lakes
+        if size == 6:
+            mid = size // 2
+            return [(mid-1, mid), (mid, mid-1)]
+
+
+        # rows for pawns
+        if size == 7:
+            setup_rows = 2
+        elif size == 8:
+            setup_rows = 2
+        elif size == 9:
+            setup_rows = 3
+        elif size == 10:
+            setup_rows = 4
         else:
-            return [(mid, mid)]
+            setup_rows = max(2, size // 4)
 
-    # -------------------------------------------------------------------------
-    # 2) PIECE COUNTS
-    # -------------------------------------------------------------------------
-    def _generate_piece_counts(self):
-        """Ensure ≥1 of each rank, then scale to board size."""
-        ranks = [
-            'Flag', 'Bomb', 'Spy', 'Scout', 'Miner',
-            'Sergeant', 'Lieutenant', 'Captain', 'Major',
-            'Colonel', 'General', 'Marshal'
+        # neutral zone
+        neutral_start = setup_rows
+        neutral_end = size - setup_rows - 1
+        mid_row = (neutral_start + neutral_end) // 2
+
+        lakes = set()
+
+        # horizontal offset
+        mid_col = size // 2
+        delta = max(2, size // 4)   # distance between clusters
+
+        # left cluster 2x2
+        for r in [mid_row - 1, mid_row]:
+            for c in [mid_col - delta - 1, mid_col - delta]:
+                lakes.add((r, c))
+
+        # right cluster 2x2
+        for r in [mid_row - 1, mid_row]:
+            for c in [mid_col + delta, mid_col + delta + 1]:
+                lakes.add((r, c))
+
+        # ensure lakes do not enter player zones
+        lakes_final = [
+            (r,c) for (r,c) in lakes
+            if not (r < setup_rows or r >= size - setup_rows)
         ]
 
-        counts = {r: 1 for r in ranks}   # minimum one of each
+        return lakes_final
 
-        target = (self.size * self.size) // 4
-        current = len(ranks)
 
-        filler = ['Scout', 'Miner', 'Sergeant', 'Bomb']
+
+
+
+
+    #2) PIECE COUNTS
+    def _generate_piece_counts(self):
+        ranks = [
+            'Flag','Bomb','Spy','Scout','Miner',
+            'Sergeant','Lieutenant','Captain','Major',
+            'Colonel','General','Marshal'
+        ]
+
+        setup_rows = max(2, self.size // 4)
+        slots = self.size * setup_rows   # available slots per player
+
+        # start with one of each
+        counts = {r: 1 for r in ranks}
+
+        # total number of pieces
+        total = len(ranks)
+
+        # reduce pieces if too many
+        if total > slots:
+            print("WARNING: too many ranks, trimming")
+
+        # preferential strategies for removing pieces
+        remove_priority = ['Spy','General','Colonel','Major','Captain']
+
         i = 0
-        while current < target:
+        while total > slots:
+            p = remove_priority[i % len(remove_priority)]
+            if counts[p] > 0:
+                counts[p] -= 1
+                total -= 1
+            i += 1
+
+        # if there is still space — add bombs and scouts
+        filler = ['Bomb','Scout','Miner','Sergeant']
+        i = 0
+        while total < slots:
             p = filler[i % len(filler)]
             counts[p] += 1
-            current += 1
+            total += 1
             i += 1
 
         return counts
+
+
+
 
     def step(self, action: str) -> Tuple[bool, ta.Info]:
         """ Execute an action in the environment """
@@ -229,9 +292,8 @@ class StrategoCustomEnv(ta.Env):
         self._observe_current_state()
         return result
     
-    # -------------------------------------------------------------------------
     # 3) RESET (override because original uses fixed 10×10 rows)
-    # -------------------------------------------------------------------------
+    
     def reset(self, num_players: int, seed: Optional[int]=None):
         """Reset but repopulate board using our custom placement logic."""
         self.state = ta.TwoPlayerState(num_players=num_players, seed=seed)
@@ -362,14 +424,6 @@ class StrategoCustomEnv(ta.Env):
         )
     
     def _render_board(self, player_id, full_board: bool = False):
-        """
-        Renders the board state with fixed-width formatting for uniform alignment.
-
-        Args:
-            player_id (int): The player viewing the board.
-            full_board (bool): Whether to render the full board or just the visible pieces.
-        """
-        # Define abbreviations for each piece
         piece_abbreviations = {
             'Flag': 'FL', 'Bomb': 'BM', 'Spy': 'SP', 'Scout': 'SC', 'Miner': 'MN',
             'Sergeant': 'SG', 'Lieutenant': 'LT', 'Captain': 'CP', 'Major': 'MJ',
@@ -377,99 +431,199 @@ class StrategoCustomEnv(ta.Env):
         }
 
         res = []
-        column_headers = "   " + " ".join([f"{i:>3}" for i in range(self.size)])  # Align column numbers
-        res.append(column_headers + "\n")
+        # header
+        res.append("   " + " ".join(f"{i:>3}" for i in range(self.size)) + "\n")
 
         for row in range(self.size):
-            row_label = chr(row + 65)  # Convert row index to a letter (A, B, C, ...)
-            row_render = [f"{row_label:<3}"]  # Add row label with fixed width
-            for col in range(self.size):
-                if (row, col) in self.lakes:
-                    cell = "  ~ "  # Lakes
-                elif self.board[row][col] is None:
-                    cell = "  . "  # Empty space
-                else:
-                    piece = self.board[row][col]
-                    abbreviation = piece_abbreviations[piece['rank']]
-                    if full_board:
-                        cell = f" {abbreviation.lower() if piece['player'] == 0 else abbreviation.upper()} "  # Full board view
-                    elif piece['player'] == player_id:
-                        displayed_piece = abbreviation.upper()
-                        cell = f" {displayed_piece} "
-                    else:
-                        cell = "  ? "  # Hidden opponent piece
-                row_render.append(cell)
+            label = chr(row + 65)
+            row_str = f"{label:<3}"
 
-            res.append("".join(row_render) + "\n")
+            for col in range(self.size):
+                pos = (row, col)
+
+                if pos in self.lakes:
+                    row_str += "  ~ "
+                    continue
+
+                cell = self.board[row][col]
+
+                if cell is None:
+                    row_str += "  . "
+                    continue
+
+                # cell contains a piece dict
+                if full_board:
+                    # show EVERYTHING
+                    ab = piece_abbreviations[cell['rank']]
+                    if cell['player'] == 0:
+                        row_str += f" {ab.lower()} "
+                    else:
+                        row_str += f" {ab.upper()} "
+                else:
+                    # player sees only their own pieces
+                    if cell['player'] == player_id:
+                        ab = piece_abbreviations[cell['rank']]
+                        row_str += f" {ab.upper()} "
+                    else:
+                        row_str += "  ? "
+
+            res.append(row_str + "\n")
 
         return "".join(res)
 
-    # -------------------------------------------------------------------------
-    # 4) POPULATE BOARD (size-aware)
-    # -------------------------------------------------------------------------
-    def _populate_board(self):
-        """
-        Simplified placement:
-        - Top `setup_rows` belong to Player 0
-        - Bottom `setup_rows` belong to Player 1
-        - No lakes on player's starting rows
-        - Random placement within each player's zone
-        """
-        size = self.size
-        setup_rows = max(2, size // 4)
 
-        # clear board
+
+    # 4) POPULATE BOARD (size-aware)
+    def _populate_board(self):
+        size = self.size
+
+        # number of rows each player has based on board size
+        if size == 6:
+            setup_rows = 2
+        elif size == 7:
+            setup_rows = 2
+        elif size == 8:
+            setup_rows = 2
+        elif size == 9:
+            setup_rows = 3
+        elif size == 10:
+            setup_rows = 4
+        else:
+            setup_rows = max(2, size // 3)
+
         board = [[None for _ in range(size)] for _ in range(size)]
 
+        # populate each player separately
         for player in (0, 1):
+            counts = self._generate_piece_counts()  # each player gets their own pieces
+            half = max(1, setup_rows // 2)
+
             if player == 0:
-                rows_allowed = range(0, setup_rows)
+                back_rows = range(0, half)
+                front_rows = range(half, setup_rows)
             else:
-                rows_allowed = range(size - setup_rows, size)
+                back_start = size - setup_rows
+                back_rows = range(back_start, back_start + half)
+                front_rows = range(back_start + half, size)
 
-            # place flag
-            placed_flag = False
-            while not placed_flag:
-                r = random.choice(list(rows_allowed))
-                c = random.randint(0, size - 1)
-                if (r, c) not in self.lakes and board[r][c] is None:
-                    board[r][c] = {"rank": "Flag", "player": player}
-                    self.player_pieces[player].append((r, c))
-                    placed_flag = True
+            free_back = [(r, c) for r in back_rows for c in range(size)
+                        if (r, c) not in self.lakes]
+            free_front = [(r, c) for r in front_rows for c in range(size)
+                        if (r, c) not in self.lakes]
 
-            # place bombs
-            bombs_to_place = self.piece_counts["Bomb"]
-            while bombs_to_place > 0:
-                r = random.choice(list(rows_allowed))
-                c = random.randint(0, size - 1)
-                if (r, c) not in self.lakes and board[r][c] is None:
-                    board[r][c] = {"rank": "Bomb", "player": player}
-                    self.player_pieces[player].append((r, c))
-                    bombs_to_place -= 1
+            random.shuffle(free_back)
+            random.shuffle(free_front)
 
-            # place remaining pieces
-            for piece, count in self.piece_counts.items():
-                if piece in ("Flag", "Bomb"):
-                    continue
-                for _ in range(count):
-                    while True:
-                        r = random.choice(list(rows_allowed))
-                        c = random.randint(0, size - 1)
-                        if (r, c) not in self.lakes and board[r][c] is None:
-                            board[r][c] = {"rank": piece, "player": player}
-                            self.player_pieces[player].append((r, c))
+            # ---------------- FLAG ALWAYS ON OUTERMOST ROW ----------------
+            if player == 0:
+                flag_row = 0
+            else:
+                flag_row = size - 1
+
+            # valid flag positions on outermost row
+            flag_candidates = [(flag_row, c) for c in range(size)
+                            if (flag_row, c) not in self.lakes
+                            and board[flag_row][c] is None]
+
+            if not flag_candidates:
+                # emergency fallback
+                flag_candidates = free_back[:]
+
+            fx, fy = random.choice(flag_candidates)
+            board[fx][fy] = {"rank": "Flag", "player": player}
+            self.player_pieces[player].append((fx, fy))
+
+            if (fx, fy) in free_back: free_back.remove((fx, fy))
+            if (fx, fy) in free_front: free_front.remove((fx, fy))
+
+            # ---------------- BOMBS: PROTECT FLAG IF POSSIBLE ----------------
+            bombs_to_place = counts.get("Bomb", 0)
+
+            for r, c in [(fx + 1, fy), (fx - 1, fy), (fx, fy + 1), (fx, fy - 1)]:
+                if bombs_to_place == 0:
+                    break
+                if 0 <= r < size and 0 <= c < size and (r, c) not in self.lakes:
+                    if board[r][c] is None:
+                        board[r][c] = {"rank": "Bomb", "player": player}
+                        self.player_pieces[player].append((r, c))
+                        if (r, c) in free_back: free_back.remove((r, c))
+                        if (r, c) in free_front: free_front.remove((r, c))
+                        bombs_to_place -= 1
+
+            while bombs_to_place > 0 and (free_back or free_front):
+                if free_back and random.random() < 0.5:
+                    r, c = free_back.pop()
+                elif free_front:
+                    r, c = free_front.pop()
+                else:
+                    break
+                board[r][c] = {"rank": "Bomb", "player": player}
+                self.player_pieces[player].append((r, c))
+                bombs_to_place -= 1
+
+            counts.pop("Flag", None)
+            counts.pop("Bomb", None)
+
+            # ---------------- SPY (in the front) ----------------
+            if counts.get("Spy", 0) > 0:
+                if free_front:
+                    r, c = free_front.pop()
+                else:
+                    r, c = free_back.pop()
+                board[r][c] = {"rank": "Spy", "player": player}
+                self.player_pieces[player].append((r, c))
+            counts.pop("Spy", None)
+
+            # ---------------- MARSHAL & GENERAL (defensive middle) ----------------
+            for rank in ("Marshal", "General"):
+                if counts.get(rank, 0) > 0 and free_back:
+                    placed = False
+                    if size < 6:
+                        mid_cols = [size // 2]
+                    else:
+                        mid_cols = [max(0, size // 2 - 1),
+                                    size // 2,
+                                    min(size - 1, size // 2 + 1)]
+
+                    for row in back_rows:
+                        for col in mid_cols:
+                            pos = (row, col)
+                            if pos in free_back:
+                                board[row][col] = {"rank": rank, "player": player}
+                                self.player_pieces[player].append((row, col))
+                                free_back.remove(pos)
+                                placed = True
+                                break
+                        if placed:
                             break
+                counts.pop(rank, None)
 
-        # place lakes
+            # ---------------- REST OF THE PIECES ----------------
+            slots = free_front + free_back
+            ranks_left = []
+            for rnk, cnt in counts.items():
+                ranks_left.extend([rnk] * cnt)
+            random.shuffle(ranks_left)
+
+            while slots and ranks_left:
+                r, c = slots.pop()
+                rank = ranks_left.pop()
+                board[r][c] = {"rank": rank, "player": player}
+                self.player_pieces[player].append((r, c))
+
+            while slots:
+                r, c = slots.pop()
+                board[r][c] = {"rank": "Scout", "player": player}
+                self.player_pieces[player].append((r, c))
+
+        # ---------------- LAKES ----------------
         for r, c in self.lakes:
             board[r][c] = "~"
 
         return board
 
 
-    # -------------------------------------------------------------------------
     # 5) VALIDATION OVERRIDE (only size-boundaries change)
-    # -------------------------------------------------------------------------
     def _validate_move(self, player_id, src_r, src_c, dst_r, dst_c):
         
         if not (0 <= src_r < self.size and 0 <= src_c < self.size and 0 <= dst_r < self.size and 0 <= dst_c < self.size):
