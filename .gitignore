@@ -213,4 +213,3 @@ logs/
 game_summaries.json
 
 stratego/prompts/current_prompt.txt
-stratego/prompts/current_prompt_prev.txt

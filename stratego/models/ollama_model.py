@@ -94,7 +94,7 @@ Output ONLY one legal move in the exact format [A0 B0]. Nothing else.
                 
         self.initial_prompt = self.system_prompt
 
-        base_url = host or os.getenv("OLLAMA_HOST", "http://localhost:11437")
+        base_url = host or os.getenv("OLLAMA_HOST", "http://localhost:11434")
         model_kwargs = {
             "temperature": kwargs.pop("temperature", 0.1),
             "top_p": kwargs.pop("top_p", 0.9),

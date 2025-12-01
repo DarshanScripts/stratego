@@ -112,7 +112,7 @@ def serialize_board(board: List[List], player_id: int = 0) -> str:
     Returns:
         Compact board string representation
     """
-    # Short forms matching the game board display
+    # Short forms matching the game board display (to store it in csv and datasets)
     RANK_SHORT = {
         "Flag": "FL",
         "Spy": "SP",
