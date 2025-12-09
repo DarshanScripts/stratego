@@ -146,48 +146,30 @@ def cli():
                 print_board(observation, args.size)
             # Pass recent move history to agent
             current_agent.set_move_history(move_history[player_id][-10:])
-            observation = observation + tracker.to_prompt_string(player_id)
-            print(tracker.to_prompt_string(player_id))
+            history_str = tracker.to_prompt_string(player_id)
+            observation = observation + history_str
+            # print(tracker.to_prompt_string(player_id))
+            lines = history_str.strip().splitlines()
+            if len(lines) <= 1:
+                print(history_str)
+            else:
+                header = lines[0:1]
+                body = lines[1:]
+                tail = body[-5:]  # Show only last 5 moves
+                print("\n".join(header + tail))
             
             # The agent (LLM) generates the action
             action = current_agent(observation)
+            if not action:
+                print(f"[TURN {turn}] {model_name} failed to produce a move (timeout or parse error).")
+                print("           -> Keeping the same player and turn. Retrying...")
+                continue
             # --- NEW LOGGING FOR STRATEGY/MODEL DECISION ---
             print(f"  > AGENT DECISION: {model_name} -> {action}")
             print(f"  > Strategy/Model: Ollama Agent (T={current_agent.temperature}, Prompt='{args.prompt}')")
-
-            # Extract move details for logging
-            # move_pattern = r'\[([A-J]\d+)\s+([A-J]\d+)\]'
-            # match = re.search(move_pattern, action)
-            # src_pos = match.group(1) if match else ""
-            # dst_pos = match.group(2) if match else ""
             
-            # # Get piece type from board (simplified extraction)
-            # piece_type = ""
-            # if src_pos and hasattr(env, 'game_state') and hasattr(env.game_state, 'board'):
-            #     try:
-            #         # Parse position like "D4" -> row=3, col=3
-            #         col = ord(src_pos[0]) - ord('A')
-            #         row = int(src_pos[1:]) - 1
-            #         piece = env.game_state.board[row][col]
-            #         if piece and hasattr(piece, 'rank_name'):
-            #             piece_type = piece.rank_name
-            #     except:
-            #         piece_type = "Unknown"
-            
-            # # Check if this is a repeated move (last 3 moves)
-            # was_repeated = False
-            # recent_moves = [m["move"] for m in move_history[player_id][-3:]]
-            # if action in recent_moves:
-            #     was_repeated = True
-            
-            # Record this move in history
-            move_history[player_id].append({
-                "turn": turn,
-                "move": action,
-                "text": f"Turn {turn}: You played {action}"
-            })
-
             done, info = env.step(action=action)
+            
             
             # Process move details for logging
             move_details = process_move(
@@ -223,13 +205,34 @@ def cli():
                     
             event = info.get("event") if isinstance(info, dict) else None
             extra = info.get("detail") if isinstance(info, dict) else None
+            
+            if outcome != "invalid":
+                # Record this move in history
+                move_history[player_id].append({
+                    "turn": turn,
+                    "move": action,
+                    "text": f"Turn {turn}: You played {action}"
+                })
 
-            tracker.record(
-                player=player_id,
-                move=action,
-                event=event,
-                extra=extra
-            )
+                tracker.record(
+                    player=player_id,
+                    move=action,
+                    event=event,
+                    extra=extra
+                )
+            else:
+                move_history[player_id].append({
+                    "turn": turn,
+                    "move": action,
+                    "text": f"Turn {turn}: INVALID move {action}"
+                })
+                tracker.record(
+                    player=player_id,
+                    move=action,
+                    event="invalid_move",
+                    extra=extra
+                )
+                print(f"[HISTORY] Skipping invalid move from history: {action}")
 
             logger.log_move(turn=turn,
                                 player=player_id,

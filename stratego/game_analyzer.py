@@ -14,6 +14,7 @@ import csv
 from typing import List, Dict, Optional
 from dataclasses import dataclass, field
 import ollama
+from stratego.prompt_manager import PromptManager
 
 
 @dataclass
@@ -206,18 +207,28 @@ def format_stats_for_llm(stats: GameStats, player_to_analyze: int) -> str:
     return "\n".join(lines)
 
 
-def analyze_with_llm(stats: GameStats, model_name: str = "mistral:7b") -> List[str]:
+def analyze_with_llm(stats: GameStats, model_name: str = "mistral:7b", existing_improvements: Optional[List[str]] = None) -> List[str]:
     """
     Send structured stats to LLM for Stratego-specific analysis.
     
     Returns list of feedback strings.
     """
+    if existing_improvements is None:
+        existing_improvements = []
     # Analyze player 0 (or the loser if there was one)
     player_to_analyze = 0
     if stats.winner == 0:
         player_to_analyze = 1  # Analyze the loser for improvement
     
     stats_summary = format_stats_for_llm(stats, player_to_analyze)
+    
+    existing_block = ""
+    if existing_improvements:
+        existing_block = "EXISTING STRATEGIC IMPROVEMENTS (from previous games):\n"
+        for fb in existing_improvements:
+            existing_block += f"- {fb}\n"
+    else:
+        existing_block = "There are currently no saved strategic improvements from previous games.\n"
     
     prompt = f"""You are an expert Stratego strategy coach. Analyze this game data and provide specific, actionable feedback.
 
@@ -228,13 +239,23 @@ STRATEGO RULES REMINDER:
 - Spy (rank 1) can defeat Marshal if attacking first.
 - Flag is the objective - capture enemy's Flag to win.
 - Flag and Bombs cannot move.
-- Cannot move opponent's pieces.
+- You cannot move your pieces diagonally.
+- You can remove opponent's pieces by attacking them with higher-ranked pieces, but you cannot choose opponent's pieces to move directly.
 - Bombs destroy any piece except Miner.
 - In this log, some moves may be marked as 'invalid'. These are ILLEGAL moves that violate Stratego rules
-  (for example, attempting to move a Flag or Bomb, moving in an impossible way, moving upon its own pieces, or trying to move opponent's pieces). Treat these as serious mistakes
+  (for example, attempting to move a Flag or Bomb, moving in an impossible way, moving upon its own pieces, trying to choose and control opponent's pieces to move directly, trying to move pieces diagonally). Treat these as serious mistakes
   and explain clearly why they are illegal and how to avoid them.
 
+{existing_block}
+
 {stats_summary}
+
+Your job:
+- READ the existing improvements above carefully.
+- DO NOT repeat semantically identical advice.
+- If your advice overlaps with existing points, rephrase it to add NEW insights or more specific suggestions.
+- If this game shows the same mistake as an existing improvement, you may reference it briefly, but focus on adding new details or strategies to address it in existing advice.
+- If the game ended with illegal or invalid moves, look over the board and find out and state what was the problem and prioritize feedback on avoiding those mistakes.
 
 Based on this data, provide EXACTLY 3 specific feedback points. Each must:
 1. Reference specific data from the stats (e.g., "Scout used 67% of the time")
@@ -268,6 +289,25 @@ Be specific and use Stratego terminology correctly."""
         print(f"LLM analysis failed: {e}")
         return []
 
+def extract_existing_improvements(current_prompt: str):
+    """
+    function that extracts existing strategic improvements from the current prompt
+    to avoid duplication when updating the prompt.
+    """
+    marker = "--- STRATEGIC IMPROVEMENTS"
+    if marker not in current_prompt:
+        return []
+
+    head, tail = current_prompt.split(marker, 1)
+    lines = tail.strip().splitlines()
+
+    bullets = []
+    for ln in lines:
+        s = ln.strip()
+        if s.startswith("•"):
+            bullets.append(s.lstrip("• ").strip())
+    return bullets
+
 
 def analyze_and_update_prompt(
     csv_path: str,
@@ -282,8 +322,6 @@ def analyze_and_update_prompt(
     """
     Analyze game with computed stats + LLM and update prompt.
     """
-    from stratego.prompt_manager import PromptManager
-    
     print("\n--- LLM Game Analysis ---")
     print(f"Analyzing: {csv_path}")
     
@@ -292,9 +330,8 @@ def analyze_and_update_prompt(
     stats.winner = winner
     stats.game_duration_seconds = game_duration_seconds or 0
     
-    if winner is not None:
-        if stats.total_turns > 0:
-            stats.loss_reason = "Flag captured or invalid move"
+    if winner is not None and stats.total_turns > 0:
+        stats.loss_reason = "Flag captured or invalid move"
     
     # Step 2: Print computed stats
     print(f"\nGame Statistics:")
@@ -308,22 +345,51 @@ def analyze_and_update_prompt(
             top_piece = max(ps.moves_by_piece.items(), key=lambda x: x[1])
             print(f"    Most used piece: {top_piece[0]} ({top_piece[1]} times)")
     
-    # Step 3: Get LLM feedback
-    feedback = analyze_with_llm(stats, model_name)
+    # # Step 3: Get LLM feedback
+    # feedback = analyze_with_llm(stats, model_name)
     
-    if not feedback:
-        print("\nNo feedback generated.")
-        return
+    # if not feedback:
+    #     print("\nNo feedback generated.")
+    #     return
     
-    print(f"\nStrategic Feedback ({len(feedback)} points):")
-    for fb in feedback:
-        print(f"  • {fb}")
+    # print(f"\nStrategic Feedback ({len(feedback)} points):")
+    # for fb in feedback:
+    #     print(f"  • {fb}")
     
     # Step 4: Update prompt
     manager = PromptManager(prompts_dir, logs_dir)
-    base_prompt = manager.get_base_prompt()
     
-    new_prompt = base_prompt + "\n\n--- STRATEGIC IMPROVEMENTS (from last game analysis) ---\n"
+    # Make LLM to read current prompt first if no current prompt, read base prompt
+    current_prompt_path = os.path.join(prompts_dir, "current_prompt.txt")
+    if os.path.exists(current_prompt_path):
+        with open(current_prompt_path, "r", encoding="utf-8") as f:
+            current_prompt_text = f.read()
+    else:
+        current_prompt_text = manager.get_base_prompt()
+    
+    existing_improvements = extract_existing_improvements(current_prompt_text)
+    
+    feedback = analyze_with_llm(
+        stats,
+        model_name,
+        existing_improvements=existing_improvements
+    )
+    
+    # new_prompt = base_prompt + "\n\n--- STRATEGIC IMPROVEMENTS (from last game analysis) ---\n"
+    # for fb in feedback:
+    #     new_prompt += f"• {fb}\n"
+        
+    marker = "--- STRATEGIC IMPROVEMENTS"
+    
+    if marker in current_prompt_text:
+        head, tail = current_prompt_text.split(marker, 1)
+        existing_block = tail.strip()
+        new_prompt = head.rstrip() + "\n\n" + marker + "\n"
+        if existing_block:
+            new_prompt += existing_block + "\n"
+    else:
+        new_prompt = current_prompt_text.rstrip() + "\n\n" + marker + " (from past games) ---\n"
+
     for fb in feedback:
         new_prompt += f"• {fb}\n"
     

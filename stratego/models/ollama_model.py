@@ -1,11 +1,13 @@
-import os, random
+import os
+import random
+import re
 from typing import Optional
 from langchain_ollama import ChatOllama
 import requests
 
 from .base import AgentLike
 from ..utils.parsing import (
-    extract_legal_moves, extract_forbidden, slice_board_and_moves, strip_think, MOVE_RE
+    extract_legal_moves, slice_board_and_moves, strip_think, MOVE_RE
 )
 
 # I seperated Prompts from the code
@@ -30,6 +32,7 @@ GENERAL RULES:
 3. Try to choose a move that would be legal in Stratego rules.
 4. NEVER repeat a previous move unless it creates a tactical advantage (capture, reveal, escape).
 5. AVOID back-and-forth oscillations (e.g., A5->A6 then A6->A5).
+6. It would be considered a SERIOUS MISTAKE, which leads you to lose the game, to attempt illegal moves such as moving a Flag or Bomb, moving in an impossible way, moving upon its own pieces, or trying to move opponent's pieces.
 
 STRATEGIC PRINCIPLES:
 1. Avoid random or pointless shuffling of pieces.
@@ -38,6 +41,7 @@ STRATEGIC PRINCIPLES:
 4. Prefer advancing Scouts for reconnaissance.
 5. Avoid moving bombs unless revealed and forced.
 6. Do NOT walk pieces next to the same unknown piece repeatedly without purpose.
+7. Do NOT afraid to sacrifice low-rank pieces for information gain.
 
 CAPTURE & SAFETY RULES:
 1. If you can capture a known weaker enemy piece safely, prefer that move.
@@ -94,7 +98,7 @@ Output ONLY one legal move in the exact format [A0 B0]. Nothing else.
                 
         self.initial_prompt = self.system_prompt
 
-        base_url = host or os.getenv("OLLAMA_HOST", "http://localhost:11437")
+        base_url = host or os.getenv("OLLAMA_HOST", "http://localhost:11434")
         model_kwargs = {
             "temperature": kwargs.pop("temperature", 0.1),
             "top_p": kwargs.pop("top_p", 0.9),
@@ -135,37 +139,6 @@ Output ONLY one legal move in the exact format [A0 B0]. Nothing else.
             return ""
 
     def __call__(self, observation: str) -> str:
-        # legal = extract_legal_moves(observation)
-        # if not legal:
-        #     return ""
-        # forbidden = set(extract_forbidden(observation))
-        # legal_filtered = [m for m in legal if m not in forbidden] or legal[:]
-        # # === HARD ANTI-REPEAT RULE ===
-        # # Detect the last move in history
-        # raw_history_lines = []
-        # for line in observation.splitlines():
-        #     if line.startswith("Turn ") and ("played" in line):
-        #         raw_history_lines.append(line)
-
-        # last_move = None
-        # if raw_history_lines:
-        #     # Example line: "Turn 20: You played [A4 A5]"
-        #     last_line = raw_history_lines[-1]
-        #     m = MOVE_RE.search(last_line)
-        #     if m:
-        #         last_move = m.group(0)
-
-        # # Filter out moves that are the exact reverse of the last move
-        # if last_move:
-        #     src = last_move[1:3]      # A4
-        #     dst = last_move[4:6]      # A5
-        #     reverse_move = f"[{dst} {src}]"
-
-        #     legal_filtered = [
-        #         mv for mv in legal_filtered
-        #         if mv != reverse_move
-        #     ] or legal_filtered
-
         # Build context
         slim = slice_board_and_moves(observation)
 
@@ -187,65 +160,58 @@ Output ONLY one legal move in the exact format [A0 B0]. Nothing else.
         if len(self.move_history) >= 2:
             recent_moves = {m["move"] for m in self.move_history[-2:]}
         
-        last_raw: str = ""
-            
+        last_error = None
+        BARE_MOVE_RE = re.compile(r"\b([A-J]\d)\s+([A-J]\d)\b")
         # Now the model ALWAYS sees your anti-repeat rules
-        for _ in range(5):
+        for _ in range(4):
             raw = self._llm_once(guidance)
-            m = MOVE_RE.search(raw)
-            if not m:
+            if not raw:
+                last_error = "empty response (timeout or HTTP error)"
                 continue
             
-            mv = m.group(0)
+            m = MOVE_RE.search(raw)
+            if m:
+                mv = m.group(0)
+            else:
+                m2 = BARE_MOVE_RE.search(raw)
+                if m2:
+                    src = m2.group(1)
+                    dst = m2.group(2)
+                    mv = f"[{src} {dst}]"
+                else:
+                    last_error = f"no move found in response: {raw[:80]!r}"
+                    continue
             
             # Check if it's a repeat of recent move
             if mv in recent_moves and len(recent_moves) > 0:
-                # # Filter out recent moves from legal options
-                # non_repeat_moves = [lm for lm in legal_filtered if lm not in recent_moves]
-                # if non_repeat_moves:
-                print(f"   LLM proposed recent move {mv}, trying alternatives...")
-                # legal_filtered = non_repeat_moves
-                continue
+                last_error = f"repeated move {mv}"
+                if _ < 3:
+                    print(f"   LLM proposed recent move {mv}, trying alternatives...")
+                    continue
+                else:
+                    print(f"   LLM keeps proposing {mv}; accepting it on final attempt.")
+                    return mv
             
             return mv
         
-        # max_attempts = 5
-        # attempts = 0
+        # if last_raw:
+        #     candidates = MOVE_RE.findall(last_raw)
+        #     if candidates:
+        #         non_recent = [mv for mv in candidates if mv not in recent_moves]
+        #         if non_recent:
+        #             return non_recent[0]
+        #         return candidates[0]
         
-        # while attempts < max_attempts:
-        #     attempts += 1
-        #     raw = self._llm_once(guidance)
-        #     last_raw = raw
-
-        #     m = MOVE_RE.search(raw)
-        #     if not m:
-        #         continue
-
-        #     mv = m.group(0)
-
-        #     if mv in recent_moves and len(recent_moves) > 0:
-        #         print(f"   LLM proposed recent move {mv}, trying alternatives...")
-        #         continue
-            
-        #     return mv
+        # obs_moves = MOVE_RE.findall(observation)
+        # if obs_moves:
+        #     non_recent = [mv for mv in obs_moves if mv not in recent_moves]
+        #     if non_recent:
+        #         return random.choice(non_recent)
+        #     return random.choice(obs_moves)
         
-        if last_raw:
-            candidates = MOVE_RE.findall(last_raw)
-            if candidates:
-                non_recent = [mv for mv in candidates if mv not in recent_moves]
-                if non_recent:
-                    return non_recent[0]
-                return candidates[0]
+        print(f"[AGENT] {self.model_name} failed to produce valid move after retries.")
+        if last_error:
+            print(f"   Last error: {last_error}")
         
-        obs_moves = MOVE_RE.findall(observation)
-        if obs_moves:
-            non_recent = [mv for mv in obs_moves if mv not in recent_moves]
-            if non_recent:
-                return random.choice(non_recent)
-            return random.choice(obs_moves)
-
-        # # If everything fails, fallback to random
-        # legal = extract_legal_moves(observation)
-        # if legal:
-        #     return random.choice(legal)
-        # return "[A0 A1]"
+        legal = extract_legal_moves(observation)
+        return random.choice(legal)
