@@ -289,26 +289,6 @@ Be specific and use Stratego terminology correctly."""
         print(f"LLM analysis failed: {e}")
         return []
 
-def extract_existing_improvements(current_prompt: str):
-    """
-    function that extracts existing strategic improvements from the current prompt
-    to avoid duplication when updating the prompt.
-    """
-    marker = "--- STRATEGIC IMPROVEMENTS"
-    if marker not in current_prompt:
-        return []
-
-    head, tail = current_prompt.split(marker, 1)
-    lines = tail.strip().splitlines()
-
-    bullets = []
-    for ln in lines:
-        s = ln.strip()
-        if s.startswith("•"):
-            bullets.append(s.lstrip("• ").strip())
-    return bullets
-
-
 def analyze_and_update_prompt(
     csv_path: str,
     prompts_dir: str = "stratego/prompts",
@@ -355,43 +335,27 @@ def analyze_and_update_prompt(
     # print(f"\nStrategic Feedback ({len(feedback)} points):")
     # for fb in feedback:
     #     print(f"  • {fb}")
-    
+
     # Step 4: Update prompt
     manager = PromptManager(prompts_dir, logs_dir)
-    
-    # Make LLM to read current prompt first if no current prompt, read base prompt
-    current_prompt_path = os.path.join(prompts_dir, "current_prompt.txt")
-    if os.path.exists(current_prompt_path):
-        with open(current_prompt_path, "r", encoding="utf-8") as f:
-            current_prompt_text = f.read()
-    else:
-        current_prompt_text = manager.get_base_prompt()
-    
-    existing_improvements = extract_existing_improvements(current_prompt_text)
-    
+
+    current_prompt_text = manager.get_current_prompt()
+    base_prompt_text = manager.get_base_prompt()
+
+    existing_improvements = manager.extract_improvements(current_prompt_text)
+
     feedback = analyze_with_llm(
         stats,
         model_name,
         existing_improvements=existing_improvements
     )
-    
-    # new_prompt = base_prompt + "\n\n--- STRATEGIC IMPROVEMENTS (from last game analysis) ---\n"
-    # for fb in feedback:
-    #     new_prompt += f"• {fb}\n"
-        
-    marker = "--- STRATEGIC IMPROVEMENTS"
-    
-    if marker in current_prompt_text:
-        head, tail = current_prompt_text.split(marker, 1)
-        existing_block = tail.strip()
-        new_prompt = head.rstrip() + "\n\n" + marker + "\n"
-        if existing_block:
-            new_prompt += existing_block + "\n"
-    else:
-        new_prompt = current_prompt_text.rstrip() + "\n\n" + marker + " (from past games) ---\n"
 
-    for fb in feedback:
-        new_prompt += f"• {fb}\n"
+    merged_improvements = manager.merge_improvements(
+        existing_improvements,
+        [f"• {fb}" for fb in feedback],
+        limit=20
+    )
+    new_prompt = manager.build_prompt(base_prompt_text, merged_improvements)
     
     manager.update_prompt(
         new_prompt,

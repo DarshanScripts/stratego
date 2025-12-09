@@ -2,7 +2,8 @@ import re
 from typing import Any, List, Sequence
 
 MOVE_RE = re.compile(r"\[[A-J]\d\s+[A-J]\d\]")
-BOARD_HEADER_RE = re.compile(r"^0(\s+\d+)+$")
+# Allow leading spaces so 6x6 duel headers like "     0   1   2   3   4   5" are captured
+BOARD_HEADER_RE = re.compile(r"^\s*0(\s+\d+)+$")
 FORBID_LINE_RE = re.compile(r"^FORBIDDEN.*:$", re.IGNORECASE)
 
 def _obs_to_str(observation: Any) -> str:
@@ -47,13 +48,22 @@ def extract_board_block_lines(observation: str, size: int = 10) -> List[str]:
     text = _obs_to_str(observation)
     lines = text.splitlines()
     header_idx = None
+    detected_size = size
+
     for i in range(len(lines) - 1, -1, -1):
         if BOARD_HEADER_RE.match(lines[i].strip()):
             header_idx = i
+            # Auto-detect board size from header numbers (e.g., "0 1 2 3 4 5" -> size 6)
+            try:
+                nums = [int(n) for n in lines[i].split() if n.isdigit()]
+                if nums:
+                    detected_size = max(nums) + 1
+            except Exception:
+                pass
             break
-    if header_idx is None or header_idx + size >= len(lines):
+    if header_idx is None or header_idx + detected_size >= len(lines):
         return []
-    return lines[header_idx: header_idx + size + 1]
+    return lines[header_idx: header_idx + detected_size + 1]
 
 def slice_board_and_moves(observation: Any, size: int = 10) -> str:
     text = _obs_to_str(observation)

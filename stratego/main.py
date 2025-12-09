@@ -1,10 +1,11 @@
 import argparse
 import re
 import time
+import random
 # from stratego.prompt_optimizer import improve_prompt
 from stratego.env.stratego_env import StrategoEnv
 from stratego.prompts import get_prompt_pack
-from stratego.utils.parsing import extract_board_block_lines
+from stratego.utils.parsing import extract_board_block_lines, extract_legal_moves, extract_forbidden
 from stratego.utils.game_move_tracker import GameMoveTracker as MoveTrackerClass
 from stratego.utils.move_processor import process_move
 from stratego.game_logger import GameLogger
@@ -158,12 +159,25 @@ def cli():
                 tail = body[-5:]  # Show only last 5 moves
                 print("\n".join(header + tail))
             
-            # The agent (LLM) generates the action
-            action = current_agent(observation)
+            # The agent (LLM) generates the action, retry a few times; fallback to available moves
+            action = ""
+            max_agent_attempts = 3
+            for attempt in range(max_agent_attempts):
+                action = current_agent(observation)
+                if action:
+                    break
+                print(f"[TURN {turn}] {model_name} failed to produce a move (attempt {attempt+1}/{max_agent_attempts}). Retrying...")
+
             if not action:
-                print(f"[TURN {turn}] {model_name} failed to produce a move (timeout or parse error).")
-                print("           -> Keeping the same player and turn. Retrying...")
-                continue
+                legal = extract_legal_moves(observation)
+                forbidden = set(extract_forbidden(observation))
+                legal_filtered = [m for m in legal if m not in forbidden] or legal
+                if legal_filtered:
+                    action = random.choice(legal_filtered)
+                    print(f"[TURN {turn}] Fallback to random available move: {action}")
+                else:
+                    print(f"[TURN {turn}] No legal moves available for fallback; ending game loop.")
+                    break
             # --- NEW LOGGING FOR STRATEGY/MODEL DECISION ---
             print(f"  > AGENT DECISION: {model_name} -> {action}")
             print(f"  > Strategy/Model: Ollama Agent (T={current_agent.temperature}, Prompt='{args.prompt}')")

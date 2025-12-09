@@ -1,13 +1,13 @@
 import os
 import random
 import re
-from typing import Optional
+from typing import Optional, Tuple
 from langchain_ollama import ChatOllama
 import requests
 
 from .base import AgentLike
 from ..utils.parsing import (
-    extract_legal_moves, slice_board_and_moves, strip_think, MOVE_RE
+    extract_legal_moves, slice_board_and_moves, strip_think, MOVE_RE, extract_forbidden
 )
 
 # I seperated Prompts from the code
@@ -77,6 +77,22 @@ Evaluate all legal moves and pick the one that:
 
 Output ONLY one legal move in the exact format [A0 B0]. Nothing else.
 """
+        self.VALIDATION_GUIDANCE = """
+You are validating a Stratego move. Decide if the move obeys Stratego rules given the board and history.
+Rules to enforce:
+- Pieces cannot move into lakes or off-board.
+- Immovable pieces (Bomb, Flag) cannot move.
+- A piece cannot capture its own piece.
+- Only Scouts can move more than one square in straight lines; others move exactly one square orthogonally.
+- No diagonal movement.
+- Respect revealed information from history (if it moved before, it is not a Bomb/Flag).
+- If an 'Available Moves:' list is present, moves not in that list are almost always invalid.
+- If a 'FORBIDDEN' list is present, those moves are invalid.
+
+Respond with either:
+- VALID
+- INVALID: <short reason>
+"""
         if isinstance(prompt_pack, str) or prompt_pack is None:
             self.prompt_pack: PromptPack = get_prompt_pack(prompt_pack)
         else:
@@ -116,6 +132,25 @@ Output ONLY one legal move in the exact format [A0 B0]. Nothing else.
         """Set the recent move history for this agent."""
         self.move_history = history
 
+    def _validate_move(self, context: str, move: str) -> Tuple[bool, str]:
+        """Ask the LLM to self-check legality based on board + history."""
+        prompt = (
+            self.VALIDATION_GUIDANCE
+            + "\n\nBOARD + HISTORY CONTEXT:\n"
+            + context
+            + f"\n\nCANDIDATE MOVE: {move}\nRespond strictly with VALID or INVALID and a reason."
+        )
+        verdict = self._llm_once(prompt)
+        if not verdict:
+            return False, "empty validation response"
+        verdict_upper = verdict.strip().upper()
+        if verdict_upper.startswith("VALID"):
+            return True, ""
+        if verdict_upper.startswith("INVALID"):
+            reason = verdict.split(":", 1)[1].strip() if ":" in verdict else "marked invalid"
+            return False, reason
+        return False, f"unrecognized verdict: {verdict[:60]}"
+
     def _llm_once(self, prompt: str) -> str:
         """Send request directly to Ollama REST API (fixes Windows LangChain bug)."""
         try:
@@ -141,6 +176,8 @@ Output ONLY one legal move in the exact format [A0 B0]. Nothing else.
     def __call__(self, observation: str) -> str:
         # Build context
         slim = slice_board_and_moves(observation)
+        available_moves = set(extract_legal_moves(observation))
+        forbidden_moves = set(extract_forbidden(observation))
 
         prompt_history_lines = []
         for line in observation.splitlines():
@@ -161,57 +198,96 @@ Output ONLY one legal move in the exact format [A0 B0]. Nothing else.
             recent_moves = {m["move"] for m in self.move_history[-2:]}
         
         last_error = None
+        last_raw: str = ""
+        invalid_memory = []
         BARE_MOVE_RE = re.compile(r"\b([A-J]\d)\s+([A-J]\d)\b")
-        # Now the model ALWAYS sees your anti-repeat rules
-        for _ in range(4):
-            raw = self._llm_once(guidance)
+
+        def _extract_move(raw: str):
+            m = MOVE_RE.search(raw or "")
+            if m:
+                return m.group(0)
+            m2 = BARE_MOVE_RE.search(raw or "")
+            if m2:
+                return f"[{m2.group(1)} {m2.group(2)}]"
+            return None
+
+        # generation + self-validation loop (4 attempts max)
+        for attempt in range(4):
+            decorated_guidance = guidance
+            if invalid_memory:
+                decorated_guidance += "\n\nPreviously invalid moves (avoid these):\n" + "\n".join(invalid_memory)
+
+            raw = self._llm_once(decorated_guidance)
+            last_raw = raw or last_raw
             if not raw:
                 last_error = "empty response (timeout or HTTP error)"
                 continue
-            
-            m = MOVE_RE.search(raw)
-            if m:
-                mv = m.group(0)
-            else:
-                m2 = BARE_MOVE_RE.search(raw)
-                if m2:
-                    src = m2.group(1)
-                    dst = m2.group(2)
-                    mv = f"[{src} {dst}]"
-                else:
-                    last_error = f"no move found in response: {raw[:80]!r}"
-                    continue
-            
-            # Check if it's a repeat of recent move
+
+            mv = _extract_move(raw)
+            if not mv:
+                last_error = f"no move found in response: {raw[:80]!r}"
+                continue
+
+            # quick deterministic veto using env-provided lists
+            if available_moves and mv not in available_moves:
+                invalid_memory.append(f"{mv} (not in Available Moves)")
+                last_error = f"{mv} not in Available Moves"
+                print(f"   LLM proposed move not in Available Moves: {mv}")
+                continue
+            if mv in forbidden_moves:
+                invalid_memory.append(f"{mv} (in FORBIDDEN)")
+                last_error = f"{mv} in FORBIDDEN"
+                print(f"   LLM proposed forbidden move {mv}")
+                continue
+
             if mv in recent_moves and len(recent_moves) > 0:
                 last_error = f"repeated move {mv}"
-                if _ < 3:
-                    print(f"   LLM proposed recent move {mv}, trying alternatives...")
+                print(f"   LLM proposed recent move {mv}, trying alternatives...")
+                continue
+
+            is_valid, reason = self._validate_move(full_context, mv)
+            if is_valid:
+                return mv
+
+            invalid_memory.append(f"{mv} ({reason})")
+            print(f"   LLM proposed invalid move {mv}: {reason}")
+            last_error = reason
+
+        def _first_valid_from_list(candidates):
+            for mv in candidates:
+                if available_moves and mv not in available_moves:
+                    # print(f"   Fallback move not in Available Moves: {mv}")
                     continue
-                else:
-                    print(f"   LLM keeps proposing {mv}; accepting it on final attempt.")
+                if mv in forbidden_moves:
+                    # print(f"   Fallback forbidden move: {mv}")
+                    continue
+                if mv in recent_moves and len(recent_moves) > 0:
+                    continue
+                is_valid, reason = self._validate_move(full_context, mv)
+                if is_valid:
                     return mv
-            
-            return mv
-        
-        # if last_raw:
-        #     candidates = MOVE_RE.findall(last_raw)
-        #     if candidates:
-        #         non_recent = [mv for mv in candidates if mv not in recent_moves]
-        #         if non_recent:
-        #             return non_recent[0]
-        #         return candidates[0]
-        
-        # obs_moves = MOVE_RE.findall(observation)
-        # if obs_moves:
-        #     non_recent = [mv for mv in obs_moves if mv not in recent_moves]
-        #     if non_recent:
-        #         return random.choice(non_recent)
-        #     return random.choice(obs_moves)
-        
+                # print(f"   Fallback invalid move {mv}: {reason}")
+            return None
+
+        if last_raw:
+            candidates = MOVE_RE.findall(last_raw or "")
+            if candidates:
+                mv = _first_valid_from_list(candidates)
+                if mv:
+                    return mv
+
+        obs_moves = MOVE_RE.findall(observation)
+        if obs_moves:
+            mv = _first_valid_from_list(obs_moves)
+            if mv:
+                return mv
+            non_recent = [mv for mv in obs_moves if mv not in recent_moves]
+            if non_recent:
+                return random.choice(non_recent)
+            return random.choice(obs_moves)
+
         print(f"[AGENT] {self.model_name} failed to produce valid move after retries.")
         if last_error:
             print(f"   Last error: {last_error}")
-        
-        legal = extract_legal_moves(observation)
-        return random.choice(legal)
+
+        return ""

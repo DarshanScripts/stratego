@@ -134,6 +134,12 @@ class StrategoDuelEnv(ta.Env):
             self.state.set_invalid_move(
                 reason=f"Invalid format '{action}'. Use [A0 B0]."
             )
+            # Illegal move ends game: opponent wins
+            try:
+                self.state.game_info[pid]["invalid_move"] = True
+            except Exception:
+                pass
+            self.state.set_winner(player_id=1 - pid, reason="Illegal move (format).")
             return self.state.step()
         else:
             sr = ord(match.group(1).upper()) - 65
@@ -145,6 +151,12 @@ class StrategoDuelEnv(ta.Env):
                 self.state.set_invalid_move(
                     reason="Illegal move according to Stratego Duel rules."
                 )
+                # Illegal move ends game: opponent wins
+                try:
+                    self.state.game_info[pid]["invalid_move"] = True
+                except Exception:
+                    pass
+                self.state.set_winner(player_id=1 - pid, reason="Illegal move.")
                 return self.state.step()
 
             # Validate basic movement rules
