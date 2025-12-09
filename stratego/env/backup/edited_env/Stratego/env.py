@@ -309,6 +309,12 @@ class StrategoEnv(ta.Env):
         if match is None:
             reason=f"Invalid action format. Player {player_id} did not input a move in the format [A0 B0]."
             self.state.set_invalid_move(reason=reason)
+            try:
+                self.state.game_info[player_id]["invalid_move"] = True
+            except Exception:
+                pass
+            self.state.set_winner(player_id=(1 - player_id), reason=reason)
+            return self.state.step()
         
         else:
             src_row, src_col, dest_row, dest_col = match.groups()
@@ -444,7 +450,14 @@ class StrategoEnv(ta.Env):
 
                         message=f"Player {player_id} has moved a piece from {source} to {dest}. The attacking piece was {attacking_piece['rank']} and the destination piece was {target_piece['rank']}. As the attacker is a lower rank than the destination, you won the battle."
                         self.state.add_observation(from_id=-1, to_id=1-player_id, message=message, observation_type=ta.ObservationType.GAME_ACTION_DESCRIPTION)
-
+            else:
+                # invalid move -> immediate loss
+                try:
+                    self.state.game_info[player_id]["invalid_move"] = True
+                except Exception:
+                    pass
+                self.state.set_winner(player_id=(1 - player_id), reason="Illegal move.")
+                return self.state.step()
         # new comment(13 Nov 2025) This block checks for win/draw conditions
         # *after* a move has been successfully made.
 

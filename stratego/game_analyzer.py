@@ -14,6 +14,7 @@ import csv
 from typing import List, Dict, Optional
 from dataclasses import dataclass, field
 import ollama
+from stratego.prompt_manager import PromptManager
 
 
 @dataclass
@@ -22,6 +23,8 @@ class PlayerStats:
     player_id: int
     model_name: str = ""
     total_moves: int = 0
+    valid_moves: int = 0
+    invalid_moves: int = 0
     
     # Piece usage
     moves_by_piece: Dict[str, int] = field(default_factory=dict) # piece_type -> count | number of moves that piece made
@@ -31,6 +34,9 @@ class PlayerStats:
     
     # Direction stats
     directions: Dict[str, int] = field(default_factory=dict)  # N/S/E/W -> count | counts of move directions
+
+    # Invalid moves
+    invalid_moves_by_piece: Dict[str, int] = field(default_factory=dict)
 
 
 @dataclass 
@@ -78,6 +84,7 @@ def parse_csv_to_stats(csv_path: str) -> GameStats:
                 move = row.get('move', '').strip()
                 piece_type = row.get('piece_type', 'Unknown')
                 from_pos = row.get('from_pos', '')
+                outcome = (row.get('outcome') or "").strip().lower()
                 
                 if player not in stats.player_stats:
                     stats.player_stats[player] = PlayerStats(player_id=player)
@@ -85,6 +92,17 @@ def parse_csv_to_stats(csv_path: str) -> GameStats:
                 ps = stats.player_stats[player]
                 ps.total_moves += 1
                 ps.model_name = row.get('model_name', '')
+                
+                if outcome == "invalid":
+                    ps.invalid_moves += 1
+                    if piece_type:
+                        ps.invalid_moves_by_piece[piece_type] = (
+                            ps.invalid_moves_by_piece.get(piece_type, 0) + 1
+                        )
+                    stats.total_turns = max(stats.total_turns, turn)
+                    continue
+                
+                ps.valid_moves += 1
                 
                 # Track piece usage
                 if piece_type:
@@ -143,6 +161,7 @@ def format_stats_for_llm(stats: GameStats, player_to_analyze: int) -> str:
     lines.append(f"Model: {ps.model_name}")
     lines.append(f"Total turns: {stats.total_turns}")
     lines.append(f"Player moves: {ps.total_moves}")
+    lines.append(f"Invalid moves: {ps.invalid_moves}")
     
     # Winner info
     if stats.winner is not None:
@@ -154,14 +173,14 @@ def format_stats_for_llm(stats: GameStats, player_to_analyze: int) -> str:
                 lines.append(f"Loss reason: {stats.loss_reason}")
     
     # Piece usage breakdown
-    lines.append("\n--- PIECE USAGE ---")
+    lines.append("\n--- PIECE USAGE (valid moves only) ---")
     total_piece_moves = sum(ps.moves_by_piece.values()) or 1
     for piece, count in sorted(ps.moves_by_piece.items(), key=lambda x: -x[1])[:8]:
         pct = (count / total_piece_moves) * 100
         lines.append(f"  {piece}: {count} moves ({pct:.1f}%)")
     
     # Most repeated moves
-    lines.append("\n--- REPEATED MOVES ---")
+    lines.append("\n--- REPEATED MOVES (valid moves only) ---")
     top_repeated = sorted(ps.move_counts.items(), key=lambda x: -x[1])[:5]
     for move, count in top_repeated:
         if count >= 3:
@@ -169,7 +188,7 @@ def format_stats_for_llm(stats: GameStats, player_to_analyze: int) -> str:
     
     # Direction analysis
     if ps.directions:
-        lines.append("\n--- MOVE DIRECTIONS ---")
+        lines.append("\n--- MOVE DIRECTIONS (valid moves only) ---")
         total_dir = sum(ps.directions.values()) or 1
         for d in ['N', 'S', 'E', 'W']:
             count = ps.directions.get(d, 0)
@@ -177,22 +196,39 @@ def format_stats_for_llm(stats: GameStats, player_to_analyze: int) -> str:
             direction_name = {'N': 'Forward/North', 'S': 'Backward/South', 
                             'E': 'Right/East', 'W': 'Left/West'}.get(d, d)
             lines.append(f"  {direction_name}: {pct:.1f}%")
+            
+    lines.append("\n--- INVALID MOVES (by piece) ---")
+    if ps.invalid_moves == 0:
+        lines.append("  None.")
+    else:
+        for piece, count in ps.invalid_moves_by_piece.items():
+            lines.append(f"  {piece}: {count} invalid attempts")
     
     return "\n".join(lines)
 
 
-def analyze_with_llm(stats: GameStats, model_name: str = "mistral:7b") -> List[str]:
+def analyze_with_llm(stats: GameStats, model_name: str = "mistral:7b", existing_improvements: Optional[List[str]] = None) -> List[str]:
     """
     Send structured stats to LLM for Stratego-specific analysis.
     
     Returns list of feedback strings.
     """
+    if existing_improvements is None:
+        existing_improvements = []
     # Analyze player 0 (or the loser if there was one)
     player_to_analyze = 0
     if stats.winner == 0:
         player_to_analyze = 1  # Analyze the loser for improvement
     
     stats_summary = format_stats_for_llm(stats, player_to_analyze)
+    
+    existing_block = ""
+    if existing_improvements:
+        existing_block = "EXISTING STRATEGIC IMPROVEMENTS (from previous games):\n"
+        for fb in existing_improvements:
+            existing_block += f"- {fb}\n"
+    else:
+        existing_block = "There are currently no saved strategic improvements from previous games.\n"
     
     prompt = f"""You are an expert Stratego strategy coach. Analyze this game data and provide specific, actionable feedback.
 
@@ -202,9 +238,24 @@ STRATEGO RULES REMINDER:
 - Miner (rank 3) can defuse Bombs.
 - Spy (rank 1) can defeat Marshal if attacking first.
 - Flag is the objective - capture enemy's Flag to win.
-- Bombs don't move and destroy any piece except Miner.
+- Flag and Bombs cannot move.
+- You cannot move your pieces diagonally.
+- You can remove opponent's pieces by attacking them with higher-ranked pieces, but you cannot choose opponent's pieces to move directly.
+- Bombs destroy any piece except Miner.
+- In this log, some moves may be marked as 'invalid'. These are ILLEGAL moves that violate Stratego rules
+  (for example, attempting to move a Flag or Bomb, moving in an impossible way, moving upon its own pieces, trying to choose and control opponent's pieces to move directly, trying to move pieces diagonally). Treat these as serious mistakes
+  and explain clearly why they are illegal and how to avoid them.
+
+{existing_block}
 
 {stats_summary}
+
+Your job:
+- READ the existing improvements above carefully.
+- DO NOT repeat semantically identical advice.
+- If your advice overlaps with existing points, rephrase it to add NEW insights or more specific suggestions.
+- If this game shows the same mistake as an existing improvement, you may reference it briefly, but focus on adding new details or strategies to address it in existing advice.
+- If the game ended with illegal or invalid moves, look over the board and find out and state what was the problem and prioritize feedback on avoiding those mistakes.
 
 Based on this data, provide EXACTLY 3 specific feedback points. Each must:
 1. Reference specific data from the stats (e.g., "Scout used 67% of the time")
@@ -238,7 +289,6 @@ Be specific and use Stratego terminology correctly."""
         print(f"LLM analysis failed: {e}")
         return []
 
-
 def analyze_and_update_prompt(
     csv_path: str,
     prompts_dir: str = "stratego/prompts",
@@ -252,8 +302,6 @@ def analyze_and_update_prompt(
     """
     Analyze game with computed stats + LLM and update prompt.
     """
-    from stratego.prompt_manager import PromptManager
-    
     print("\n--- LLM Game Analysis ---")
     print(f"Analyzing: {csv_path}")
     
@@ -262,9 +310,8 @@ def analyze_and_update_prompt(
     stats.winner = winner
     stats.game_duration_seconds = game_duration_seconds or 0
     
-    if winner is not None:
-        if stats.total_turns > 0:
-            stats.loss_reason = "Flag captured or invalid move"
+    if winner is not None and stats.total_turns > 0:
+        stats.loss_reason = "Flag captured or invalid move"
     
     # Step 2: Print computed stats
     print(f"\nGame Statistics:")
@@ -278,24 +325,37 @@ def analyze_and_update_prompt(
             top_piece = max(ps.moves_by_piece.items(), key=lambda x: x[1])
             print(f"    Most used piece: {top_piece[0]} ({top_piece[1]} times)")
     
-    # Step 3: Get LLM feedback
-    feedback = analyze_with_llm(stats, model_name)
+    # # Step 3: Get LLM feedback
+    # feedback = analyze_with_llm(stats, model_name)
     
-    if not feedback:
-        print("\nNo feedback generated.")
-        return
+    # if not feedback:
+    #     print("\nNo feedback generated.")
+    #     return
     
-    print(f"\nStrategic Feedback ({len(feedback)} points):")
-    for fb in feedback:
-        print(f"  • {fb}")
-    
+    # print(f"\nStrategic Feedback ({len(feedback)} points):")
+    # for fb in feedback:
+    #     print(f"  • {fb}")
+
     # Step 4: Update prompt
     manager = PromptManager(prompts_dir, logs_dir)
-    base_prompt = manager.get_base_prompt()
-    
-    new_prompt = base_prompt + "\n\n--- STRATEGIC IMPROVEMENTS (from last game analysis) ---\n"
-    for fb in feedback:
-        new_prompt += f"• {fb}\n"
+
+    current_prompt_text = manager.get_current_prompt()
+    base_prompt_text = manager.get_base_prompt()
+
+    existing_improvements = manager.extract_improvements(current_prompt_text)
+
+    feedback = analyze_with_llm(
+        stats,
+        model_name,
+        existing_improvements=existing_improvements
+    )
+
+    merged_improvements = manager.merge_improvements(
+        existing_improvements,
+        [f"• {fb}" for fb in feedback],
+        limit=20
+    )
+    new_prompt = manager.build_prompt(base_prompt_text, merged_improvements)
     
     manager.update_prompt(
         new_prompt,

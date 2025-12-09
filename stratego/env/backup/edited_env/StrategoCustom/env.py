@@ -92,7 +92,13 @@ class StrategoCustomEnv(ta.Env):
         if match is None:
             reason=f"Invalid action format. Player {player_id} did not input a move in the format [A0 B0]."
             self.state.set_invalid_move(reason=reason)
-        
+            try:
+                self.state.game_info[player_id]["invalid_move"] = True
+            except Exception:
+                pass
+            self.state.set_winner(player_id=(1 - player_id), reason=reason)
+            return self.state.step()
+
         else:
             src_row, src_col, dest_row, dest_col = match.groups()
             src_row, dest_row = src_row.upper(), dest_row.upper()
@@ -205,17 +211,24 @@ class StrategoCustomEnv(ta.Env):
                         message=f"Player {player_id} has moved a piece from {source} to {dest}. The attacking piece was {attacking_piece['rank']} and the destination piece was {target_piece['rank']}. As the attacker is a higher rank than the destination, you lost the battle."
                         self.state.add_observation(from_id=-1, to_id=1-player_id, message=message, observation_type=ta.ObservationType.GAME_ACTION_DESCRIPTION)
 
-                    else:
-                        ## defender wins
-                        self.board[src_row][src_col] = None
-                        self.player_pieces[player_id].remove((src_row, src_col))
+            else:
+                ## defender wins
+                self.board[src_row][src_col] = None
+                self.player_pieces[player_id].remove((src_row, src_col))
 
-                        ## add the observation to both players separately
-                        message=f"You have moved your piece from {source} to {dest}. The attacking piece was {attacking_piece['rank']} and the destination piece was {target_piece['rank']}. As the attacker is a lower rank than the destination, you lost the battle."
-                        self.state.add_observation(from_id=-1, to_id=player_id, message=message, observation_type=ta.ObservationType.GAME_ACTION_DESCRIPTION)
+                ## add the observation to both players separately
+                message=f"You have moved your piece from {source} to {dest}. The attacking piece was {attacking_piece['rank']} and the destination piece was {target_piece['rank']}. As the attacker is a lower rank than the destination, you lost the battle."
+                self.state.add_observation(from_id=-1, to_id=player_id, message=message, observation_type=ta.ObservationType.GAME_ACTION_DESCRIPTION)
 
-                        message=f"Player {player_id} has moved a piece from {source} to {dest}. The attacking piece was {attacking_piece['rank']} and the destination piece was {target_piece['rank']}. As the attacker is a lower rank than the destination, you won the battle."
-                        self.state.add_observation(from_id=-1, to_id=1-player_id, message=message, observation_type=ta.ObservationType.GAME_ACTION_DESCRIPTION)
+                message=f"Player {player_id} has moved a piece from {source} to {dest}. The attacking piece was {attacking_piece['rank']} and the destination piece was {target_piece['rank']}. As the attacker is a lower rank than the destination, you won the battle."
+                self.state.add_observation(from_id=-1, to_id=1-player_id, message=message, observation_type=ta.ObservationType.GAME_ACTION_DESCRIPTION)
+        else:
+            try:
+                self.state.game_info[player_id]["invalid_move"] = True
+            except Exception:
+                pass
+            self.state.set_winner(player_id=(1 - player_id), reason="Illegal move.")
+            return self.state.step()
 
         ## check if the game is over
         if self._check_winner():

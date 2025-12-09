@@ -18,12 +18,16 @@ BASE = PromptPack(
         "You are a Stratego-playing agent.\n"
         "You MUST output exactly ONE move and NOTHING ELSE.\n"
         "The move MUST be in the format [A0 B0].\n"
-        "The move MUST be one of the legal moves listed under 'Available Moves:'.\n"
+        # "The move MUST be one of the legal moves listed under 'Available Moves:'.\n"
+        "The move MUST be legal'.\n"
     ),
     guidance_template=(
         "{board_slice}\n\n"
         "RULES:\n"
-        "- Use ONLY the moves listed in 'Available Moves:'.\n"
+        "- You cannot control opponent's pieces yourself'.\n"
+        "- You cannot move your Flag and Bombs.\n"
+        "- You cannot move your pieces upon your other pieces.\n"
+        "- You cannot move your pieces diagonally.\n"
         "- Output exactly one move in the format [A0 B0].\n"
         "- No commentary. No extra spaces or lines.\n"
         "- If multiple moves seem good, choose any ONE of them.\n"
