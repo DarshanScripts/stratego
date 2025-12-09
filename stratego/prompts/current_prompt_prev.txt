@@ -11,3 +11,9 @@ OUTPUT:
 - Respond with ONLY the move in format [SRC DST]
 - No explanations, no reasoning, just the move
 - Example: [D4 E4]
+
+
+--- STRATEGIC IMPROVEMENTS (from last game analysis) ---
+• Firstly, it is concerning to see that the movement pattern '[F2 E2]' was repeated 4 times in this game. This repetitive action could indicate a lack of adaptability and exploration of the opponent's positions. In Stratego, it's crucial to vary your moves to keep your enemy guessing about your piece locations and intentions.
+• Secondly, the high frequency of using the move '[E2 E1]' three times suggests that Player 1 might be focusing too much on defending their own territory instead of probing the opponent's positions with Scouts or Miners. Aggressive play is essential in Stratego to gain an advantage and capture the enemy Flag.
+• Lastly, the repeated use of '[E2 F2]' and '[F2 F1]' movements indicates a possible lack of strategic positioning. These moves tend to move pieces towards the center of the board where they could be easily targeted by higher-ranked enemy pieces. Instead, consider using these moves more strategically, such as luring enemy pieces into traps or setting up ambushes with hidden high-ranked pieces.
