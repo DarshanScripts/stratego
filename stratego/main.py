@@ -89,8 +89,8 @@ def cli():
                 print(f"Selected: {DUEL_ENV}")
                 break
             elif choice == '3':
-                board = input("Please enter your custom board size in rang of 6~10: ").strip()
-                if board in ['6', '7', '8', '9', '10']:
+                board = input("Please enter your custom board size in range of 6~9: ").strip()
+                if board in ['6', '7', '8', '9']:
                     args.env_id = CUSTOM_ENV
                     args.size = int(board)
                     print(f"Selected: {CUSTOM_ENV} with size {args.size}x{args.size}")
