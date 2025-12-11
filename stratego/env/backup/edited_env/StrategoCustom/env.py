@@ -3,8 +3,6 @@ import re
 from typing import Any, Dict, Optional, Tuple, List
 
 import textarena as ta
-
-
 class StrategoCustomEnv(ta.Env):
     """
     Custom Stratego environment supporting board sizes 6–9.
