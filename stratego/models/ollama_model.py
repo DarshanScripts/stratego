@@ -133,6 +133,7 @@ Respond with either:
                 
         self.initial_prompt = self.system_prompt
 
+
         base_url = host or os.getenv("OLLAMA_HOST", "http://localhost:11434")
         model_kwargs = {
             "temperature": kwargs.pop("temperature", 0.1),

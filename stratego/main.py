@@ -120,6 +120,7 @@ def cli():
     p = argparse.ArgumentParser()
 <<<<<<< HEAD
     p.add_argument("--p0", default="ollama:phi3:3.8b")
+    p.add_argument("--p0", default="ollama:deepseek-r1:32b")
     p.add_argument("--p1", default="ollama:gemma3:1b")
     # UPDATED HELP TEXT to explain how this parameter relates to VRAM utilization
     # For large models (120B, 70B), you MUST set this value based on available VRAM(13 Nov 2025)
@@ -155,8 +156,8 @@ def cli():
                 print(f"Selected: {DUEL_ENV}")
                 break
             elif choice == '3':
-                board = input("Please enter your custom board size in rang of 6~10: ").strip()
-                if board in ['6', '7', '8', '9', '10']:
+                board = input("Please enter your custom board size in range of 6~9: ").strip()
+                if board in ['6', '7', '8', '9']:
                     args.env_id = CUSTOM_ENV
                     args.size = int(board)
                     print(f"Selected: {CUSTOM_ENV} with size {args.size}x{args.size}")
