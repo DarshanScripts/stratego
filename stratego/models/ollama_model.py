@@ -14,8 +14,7 @@ from ..utils.parsing import (
 
 
 # I seperated Prompts from the code
-from ..prompts import PromptPack, get_prom
-pt_pack
+from ..prompts import PromptPack, get_prompt_pack
 
 # 🧩 Import strategies
 from ..strategies.base import Strategy
@@ -294,7 +293,7 @@ Respond with either:
                 mv = _first_valid_from_list(candidates)
                 if mv:
                     return mv
-                
+                    
         # Try to pick a random valid move from available moves
         obs_moves = MOVE_RE.findall(observation)
         if obs_moves:
@@ -310,4 +309,4 @@ Respond with either:
         if last_error:
             print(f"   Last error: {last_error}")
 
-       return ""
+        return ""
