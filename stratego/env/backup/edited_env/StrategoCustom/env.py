@@ -222,13 +222,12 @@ class StrategoCustomEnv(ta.Env):
 
                 message=f"Player {player_id} has moved a piece from {source} to {dest}. The attacking piece was {attacking_piece['rank']} and the destination piece was {target_piece['rank']}. As the attacker is a lower rank than the destination, you won the battle."
                 self.state.add_observation(from_id=-1, to_id=1-player_id, message=message, observation_type=ta.ObservationType.GAME_ACTION_DESCRIPTION)
-        else:
-            try:
-                self.state.game_info[player_id]["invalid_move"] = True
-            except Exception:
-                pass
-            self.state.set_winner(player_id=(1 - player_id), reason="Illegal move.")
-            return self.state.step()
+                try:
+                    self.state.game_info[player_id]["invalid_move"] = True
+                except Exception:
+                    pass
+                self.state.set_winner(player_id=(1 - player_id), reason="Illegal move.")
+                return self.state.step()
 
         ## check if the game is over
         if self._check_winner():
