@@ -1,3 +1,4 @@
+
 from __future__ import annotations
 from dataclasses import dataclass
 from typing import Dict
@@ -17,12 +18,16 @@ BASE = PromptPack(
         "You are a Stratego-playing agent.\n"
         "You MUST output exactly ONE move and NOTHING ELSE.\n"
         "The move MUST be in the format [A0 B0].\n"
-        "The move MUST be one of the legal moves listed under 'Available Moves:'.\n"
+        # "The move MUST be one of the legal moves listed under 'Available Moves:'.\n"
+        "The move MUST be legal'.\n"
     ),
     guidance_template=(
         "{board_slice}\n\n"
         "RULES:\n"
-        "- Use ONLY the moves listed in 'Available Moves:'.\n"
+        "- You cannot control opponent's pieces yourself'.\n"
+        "- You cannot move your Flag and Bombs.\n"
+        "- You cannot move your pieces upon your other pieces.\n"
+        "- You cannot move your pieces diagonally.\n"
         "- Output exactly one move in the format [A0 B0].\n"
         "- No commentary. No extra spaces or lines.\n"
         "- If multiple moves seem good, choose any ONE of them.\n"
@@ -39,8 +44,16 @@ CONCISE = PromptPack(
     name="concise",
     system="Stratego agent. Output exactly one legal move like [SRC DST].",
     guidance_template=(
+        "{board_slice}\n\n"
+        "INSTRUCTIONS:\n"
+        "- Choose exactly ONE move from the 'Available Moves:' section above.\n"
+        "- Do NOT choose any move listed under 'FORBIDDEN' (if present).\n"
+        "- Prefer captures that are likely to win, or otherwise prefer safe advancement.\n"
+        "- Avoid exposing high-value pieces to obvious captures.\n"
+        "- Output ONLY the move in format [A0 B0] and nothing else.\n"
     ),
 )
+
 
 ADAPTIVE = PromptPack(
     name="adaptive",
@@ -49,6 +62,14 @@ ADAPTIVE = PromptPack(
         "Output exactly one legal move [SRC DST]."
     ),
     guidance_template=(
+        "{board_slice}\n\n"
+        "GUIDANCE (ADAPTIVE):\n"
+        "- Consider immediate captures first: prefer trades that win material or remove high-value opponents.\n"
+        "- Assess risk: avoid moves that expose your high-rank pieces to probable capture.\n"
+        "- Prioritize safe advancement and creating or denying threats when captures are unclear.\n"
+        "- Respect 'FORBIDDEN' moves (do not choose them) and choose only from 'Available Moves:'.\n"
+        "- If multiple moves are comparable, prefer those that increase mobility or secure key squares.\n"
+        "- Output ONLY the chosen move in format [A0 B0] and nothing else.\n"
     ),
 )
 

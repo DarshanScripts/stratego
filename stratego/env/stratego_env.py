@@ -1,7 +1,7 @@
 import textarena as ta
 
 class StrategoEnv:
-    def __init__(self, env_id: str = "Stratego-v0", **rule_opts):
+    def __init__(self, env_id: str = "Stratego-v0", size: int = 10):
         # TODO: make various option to play
         # Stratego original as default, if the user want to play duel mode, env_id = "Stratego-duel"
         # rule_opts: e.g. board_size=10, etc.
@@ -9,8 +9,10 @@ class StrategoEnv:
         # in original textarena library by running or installing the program.
         # You can see which file should be edited in backup folder.
         # Don't worry, this should be done with Package managing team.
-        self.env = ta.make(env_id=env_id)
-        self.rule_opts = rule_opts
+        if size != 10:
+            self.env = ta.make(env_id=env_id, size=size)
+        else:
+            self.env = ta.make(env_id=env_id)
 
     def reset(self, num_players: int = 2):
         self.env.reset(num_players=num_players)
