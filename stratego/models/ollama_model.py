@@ -1,7 +1,11 @@
 import os
 import random
+<<<<<<< HEAD
 import re
 from typing import Optional, Tuple
+=======
+from typing import Optional
+>>>>>>> 2010f743cd849c0c74ee1f8e3578ba864676ced5
 from langchain_ollama import ChatOllama
 import requests
 
@@ -9,9 +13,19 @@ from .base import AgentLike
 from ..utils.parsing import (
     extract_legal_moves, slice_board_and_moves, strip_think, MOVE_RE, extract_forbidden
 )
+<<<<<<< HEAD
 
 # I seperated Prompts from the code
+=======
+>>>>>>> 2010f743cd849c0c74ee1f8e3578ba864676ced5
 from ..prompts import PromptPack, get_prompt_pack
+
+# 🧩 Import strategies
+from ..strategies.base import Strategy
+from ..strategies.aggressive_strategy import AggressiveStrategy
+from ..strategies.defensive_strategy import DefensiveStrategy
+from ..strategies.random_move import RandomStrategy
+
 
 class OllamaAgent(AgentLike):
     def __init__(
@@ -20,11 +34,16 @@ class OllamaAgent(AgentLike):
         system_prompt: Optional[str] = None,
         host: Optional[str] = None,
         prompt_pack: Optional[PromptPack | str] = None,
+        strategy: Optional[Strategy] = None,
         **kwargs,
     ):
         self.model_name = model_name
+<<<<<<< HEAD
         self.STRATEGIC_GUIDANCE = """
 You are a skilled Stratego player. You must choose the SINGLE best legal move from the given board, legal moves, forbidden moves, and move history.
+=======
+        self.strategy = strategy or RandomStrategy()  # default dacă nu e setată
+>>>>>>> 2010f743cd849c0c74ee1f8e3578ba864676ced5
 
 GENERAL RULES:
 1. Output EXACTLY ONE MOVE in the form [A0 B0].
@@ -122,6 +141,8 @@ Respond with either:
             "num_predict": kwargs.pop("num_predict", 24),
             **kwargs,
         }
+        
+        print("🚀 Connecting to Ollama at:", base_url)
         self.client = ChatOllama(model=model_name, base_url=base_url, model_kwargs=model_kwargs)
         
         # Simple move history tracking
@@ -151,7 +172,9 @@ Respond with either:
             return False, reason
         return False, f"unrecognized verdict: {verdict[:60]}"
 
+    # Run one LLM call
     def _llm_once(self, prompt: str) -> str:
+<<<<<<< HEAD
         """Send request directly to Ollama REST API (fixes Windows LangChain bug)."""
         try:
             response = requests.post(
@@ -204,6 +227,50 @@ Respond with either:
 
         def _extract_move(raw: str):
             m = MOVE_RE.search(raw or "")
+=======
+        # ✂️ limităm promptul la 1200 caractere (modelele mici se blochează la prompturi mari)
+        prompt = prompt[:1200]
+        print("🧠 Sending to Ollama:\n", prompt[:400], "...\n")  # vezi ce se trimite
+        msgs = [SystemMessage(content=self.system_prompt), HumanMessage(content=prompt)]
+        out = self.client.invoke(msgs)
+        print("🧠 Ollama raw output:", getattr(out, "content", None))
+        return (getattr(out, "content", "") or "").strip()
+
+
+    # Main decision method
+    def __call__(self, observation: str) -> str:
+        legal_moves = extract_legal_moves(observation)
+        if not legal_moves:
+            return ""
+
+        forbidden = set(extract_forbidden(observation))
+        legal_filtered = [m for m in legal_moves if m not in forbidden] or legal_moves[:]
+        prompt_context = observation
+
+
+        # Strategy context 
+        strategy_context = self.strategy.get_context()
+
+        # Combine everything into the LLM prompt
+        final_prompt = (
+            "You are playing Stratego. Each move is written as '[FROM] [TO]' "
+            "(for example 'A0 A1' means move the piece from A0 to A1).\n\n"
+            f"Current player strategy: {strategy_context}\n\n"
+            "BOARD (rows labeled A, B, C...; columns labeled 0,1,2,...):\n"
+            f"{observation}\n\n"
+            f"LEGAL MOVES (choose one exactly as written):\n{', '.join(legal_filtered)}\n\n"
+            "Your task: choose ONE legal move from the list above. "
+            "Do NOT explain your reasoning, only reply with the move itself (e.g. 'B2 B3')."
+        )
+
+
+        # Try several times until we get a valid move
+        for _ in range(4):
+            raw = self._llm_once(final_prompt)
+
+
+            m = MOVE_RE.search(raw)
+>>>>>>> 2010f743cd849c0c74ee1f8e3578ba864676ced5
             if m:
                 return m.group(0)
             m2 = BARE_MOVE_RE.search(raw or "")
@@ -276,6 +343,7 @@ Respond with either:
                 if mv:
                     return mv
 
+<<<<<<< HEAD
         obs_moves = MOVE_RE.findall(observation)
         if obs_moves:
             mv = _first_valid_from_list(obs_moves)
@@ -291,3 +359,15 @@ Respond with either:
             print(f"   Last error: {last_error}")
 
         return ""
+=======
+            # fallback: stricter request
+            raw2 = self._llm_once(f"Choose ONE legal move from: {', '.join(legal_filtered)}.")
+            m2 = MOVE_RE.search(raw2)
+            if m2:
+                mv2 = m2.group(0)
+                if mv2 in legal_filtered:
+                    return mv2
+
+        # fallback final
+        return random.choice(legal_filtered)
+>>>>>>> 2010f743cd849c0c74ee1f8e3578ba864676ced5
