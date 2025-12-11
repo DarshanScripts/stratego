@@ -1035,4 +1035,3 @@ class StrategoCustomEnv(ta.Env):
     def _check_stalemate(self) -> bool:
         """Stalemate if neither player has any movable pieces."""
         return not self._has_movable_pieces(0) and not self._has_movable_pieces(1)
->>>>>>> 6eb9b87cb9908c0e97f4c71436772880d98caf01
