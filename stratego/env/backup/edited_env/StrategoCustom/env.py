@@ -106,8 +106,13 @@ class StrategoCustomEnv(ta.Env):
         dest_col = int(dst_col_str)
         
         if not self._validate_move(player_id, src_row, src_col, dest_row, dest_col):
+            try:
+                self.state.game_info[player_id]["invalid_move"] = True
+            except Exception:
+                pass
+            self.state.set_winner(player_id=(1 - player_id), reason="Illegal move.")
             return self.state.step()
-
+        
         if self._check_repetition(player_id, src_row, src_col, dest_row, dest_col):
             self.state.set_invalid_move(reason="Illegal move: Two-Squares Rule violation.")
             return self.state.step()
