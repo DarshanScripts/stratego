@@ -292,12 +292,12 @@ def cli():
 
         if p0_score > p1_score:
             winner = 0
-            game_result = "player0_wins"
+            game_result = "player0"
             print(f"\n🏆 * * * PLAYER 0 WINS! * * * 🏆")
             print(f"Agent: {agents[0].model_name}")
         elif p1_score > p0_score:
             winner = 1
-            game_result = "player1_wins"
+            game_result = "player1"
             print(f"\n🏆 * * * PLAYER 1 WINS! * * * 🏆")
             print(f"Agent: {agents[1].model_name}")
         else:
@@ -324,12 +324,8 @@ def cli():
     )
     
     # Auto-push game data to Hugging Face Hub
-    print("\n📊 Syncing game data to Hugging Face...")
+    print("\nSyncing game data to Hugging Face...")
     auto_push_after_game(
         logs_dir=os.path.join(args.log_dir, "games"),
-        repo_id="DarshanScripts/stratego",
+        repo_id="STRATEGO-LLM-TRAINING/stratego",
     )
-
-
-if __name__ == "__main__":
-    cli()
