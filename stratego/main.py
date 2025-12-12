@@ -90,8 +90,10 @@ def cli():
                 print(f"Selected: {DUEL_ENV}")
                 break
             elif choice == '3':
-                board = input("Please enter your custom board size in range of 6~9: ").strip()
-                if board in ['6', '7', '8', '9']:
+                # [CHANGE] Updated prompt range description
+                board = input("Please enter your custom board size in range of 4~9: ").strip()
+                # [CHANGE] Added '4' and '5' to valid options
+                if board in ['4', '5', '6', '7', '8', '9']:
                     args.env_id = CUSTOM_ENV
                     args.size = int(board)
                     print(f"Selected: {CUSTOM_ENV} with size {args.size}x{args.size}")
@@ -148,6 +150,16 @@ def cli():
             # Pass recent move history to agent
             current_agent.set_move_history(move_history[player_id][-10:])
             history_str = tracker.to_prompt_string(player_id)
+            
+            # --- [CHANGE] INJECT AGGRESSION WARNING ---
+            # If the game drags on (e.g. > 20 turns), force them to wake up
+            if turn > 20:
+                observation += "\n\n[SYSTEM MESSAGE]: The game is stalling. You MUST ATTACK or ADVANCE immediately. Passive play is forbidden."
+            
+            if turn > 50:
+                 observation += "\n[CRITICAL]: STOP MOVING BACK AND FORTH. Pick a piece and move it FORWARD now."
+            # ------------------------------------------
+
             observation = observation + history_str
             # print(tracker.to_prompt_string(player_id))
             lines = history_str.strip().splitlines()
