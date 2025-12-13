@@ -32,11 +32,7 @@ class GameLogger:
             self._f,
             fieldnames=[
                 "turn", "player", "model_name",
-                "move", "from_pos", "to_pos", "piece_type",
-                "board_state", "available_moves", "move_direction",
-                "target_piece", "battle_outcome",
-                "prompt_name", "game_type", "board_size",
-                "game_winner", "game_result",
+                "move", "from_pos", "to_pos", "piece_type", "outcome",
             ],
             quoting=csv.QUOTE_MINIMAL,
             escapechar="\\"
@@ -53,6 +49,7 @@ class GameLogger:
         src: str = "",
         dst: str = "",
         piece_type: str = "",
+        outcome: str = "",
         board_state: str = "",
         available_moves: str = "",
         move_direction: str = "",
@@ -67,19 +64,8 @@ class GameLogger:
             "from_pos": src,
             "to_pos": dst,
             "piece_type": piece_type,
-            "board_state": board_state,
-            "available_moves": available_moves,
-            "move_direction": move_direction,
-            "target_piece": target_piece,
-            "battle_outcome": battle_outcome,
-            "prompt_name": self.prompt_name,
-            "game_type": self.game_type,
-            "board_size": self.board_size,
-            "game_winner": "",  # Filled post-game
-            "game_result": "",  # Filled post-game
-        }
-        self._writer.writerow(row)
-        self._rows.append(row)
+            "outcome": outcome,
+        })
         self._f.flush()
     
     def finalize_game(self, winner: Optional[int], game_result: str = ""):

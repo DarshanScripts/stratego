@@ -1,15 +1,27 @@
-import os, random
-from typing import Optional
+import os
+import random
+
+import re
+from typing import Optional, Tuple
+
 from langchain_ollama import ChatOllama
 import requests
 
 from .base import AgentLike
 from ..utils.parsing import (
-    extract_legal_moves, extract_forbidden, slice_board_and_moves, strip_think, MOVE_RE
+    extract_legal_moves, slice_board_and_moves, strip_think, MOVE_RE, extract_forbidden
 )
+
 
 # I seperated Prompts from the code
 from ..prompts import PromptPack, get_prompt_pack
+
+# 🧩 Import strategies
+from ..strategies.base import Strategy
+from ..strategies.aggressive_strategy import AggressiveStrategy
+from ..strategies.defensive_strategy import DefensiveStrategy
+from ..strategies.random_move import RandomStrategy
+
 
 class OllamaAgent(AgentLike):
     def __init__(
@@ -18,18 +30,22 @@ class OllamaAgent(AgentLike):
         system_prompt: Optional[str] = None,
         host: Optional[str] = None,
         prompt_pack: Optional[PromptPack | str] = None,
+        strategy: Optional[Strategy] = None,
         **kwargs,
     ):
         self.model_name = model_name
+
         self.STRATEGIC_GUIDANCE = """
-You are a skilled Stratego player. You must choose the SINGLE best legal move from the given board, legal moves, forbidden moves, and move history.
+You are a skilled Stratego player.
+You must choose the SINGLE best legal move from the given board, legal moves, forbidden moves, and move history.
 
 GENERAL RULES:
 1. Output EXACTLY ONE MOVE in the form [A0 B0].
 2. NEVER output explanations, commentary, or reasoning.
-3. ONLY choose moves that appear in the legal moves list.
+3. Try to choose a move that would be legal in Stratego rules.
 4. NEVER repeat a previous move unless it creates a tactical advantage (capture, reveal, escape).
 5. AVOID back-and-forth oscillations (e.g., A5->A6 then A6->A5).
+6. It would be considered a SERIOUS MISTAKE, which leads you to lose the game, to attempt illegal moves such as moving a Flag or Bomb, moving in an impossible way, moving upon its own pieces, or trying to move opponent's pieces.
 
 STRATEGIC PRINCIPLES:
 1. Avoid random or pointless shuffling of pieces.
@@ -38,6 +54,7 @@ STRATEGIC PRINCIPLES:
 4. Prefer advancing Scouts for reconnaissance.
 5. Avoid moving bombs unless revealed and forced.
 6. Do NOT walk pieces next to the same unknown piece repeatedly without purpose.
+7. Do NOT afraid to sacrifice low-rank pieces for information gain.
 
 CAPTURE & SAFETY RULES:
 1. If you can capture a known weaker enemy piece safely, prefer that move.
@@ -73,6 +90,23 @@ Evaluate all legal moves and pick the one that:
 
 Output ONLY one legal move in the exact format [A0 B0]. Nothing else.
 """
+#         self.VALIDATION_GUIDANCE = """
+# You are validating a Stratego move. Decide if the move obeys Stratego rules given the board and history.
+# Rules to enforce:
+# - Pieces cannot move into lakes or off-board.
+# - Immovable pieces (Bomb, Flag) cannot move.
+# - A piece cannot capture its own piece.
+# - Only Scouts can move more than one square in straight lines; others move exactly one square orthogonally.
+# - No diagonal movement.
+# - Respect revealed information from history (if it moved before, it is not a Bomb/Flag).
+# - If an 'Available Moves:' list is present, moves not in that list are almost always invalid.
+# - If a 'FORBIDDEN' list is present, those moves are invalid.
+# - On small custom boards (size <= 5), there are NO lakes unless the board explicitly shows '~'. If you do not see '~', assume no lakes exist.
+
+# Respond with either:
+# - VALID
+# - INVALID: <short reason>
+# """
         if isinstance(prompt_pack, str) or prompt_pack is None:
             self.prompt_pack: PromptPack = get_prompt_pack(prompt_pack)
         else:
@@ -93,7 +127,7 @@ Output ONLY one legal move in the exact format [A0 B0]. Nothing else.
                 
                 
         self.initial_prompt = self.system_prompt
-
+        # Setup Ollama client
         base_url = host or os.getenv("OLLAMA_HOST", "http://localhost:11434")
         model_kwargs = {
             "temperature": kwargs.pop("temperature", 0.1),
@@ -102,6 +136,8 @@ Output ONLY one legal move in the exact format [A0 B0]. Nothing else.
             "num_predict": kwargs.pop("num_predict", 24),
             **kwargs,
         }
+        
+        print("🚀 Connecting to Ollama at:", base_url)
         self.client = ChatOllama(model=model_name, base_url=base_url, model_kwargs=model_kwargs)
         
         # Simple move history tracking
@@ -112,7 +148,28 @@ Output ONLY one legal move in the exact format [A0 B0]. Nothing else.
         """Set the recent move history for this agent."""
         self.move_history = history
 
+    # def _validate_move(self, context: str, move: str) -> Tuple[bool, str]:
+    #     """Ask the LLM to self-check legality based on board + history."""
+    #     prompt = (
+    #         self.VALIDATION_GUIDANCE
+    #         + "\n\nBOARD + HISTORY CONTEXT:\n"
+    #         + context
+    #         + f"\n\nCANDIDATE MOVE: {move}\nRespond strictly with VALID or INVALID and a reason."
+    #     )
+    #     verdict = self._llm_once(prompt)
+    #     if not verdict:
+    #         return False, "empty validation response"
+    #     verdict_upper = verdict.strip().upper()
+    #     if verdict_upper.startswith("VALID"):
+    #         return True, ""
+    #     if verdict_upper.startswith("INVALID"):
+    #         reason = verdict.split(":", 1)[1].strip() if ":" in verdict else "marked invalid"
+    #         return False, reason
+    #     return False, f"unrecognized verdict: {verdict[:60]}"
+
+    # Run one LLM call
     def _llm_once(self, prompt: str) -> str:
+
         """Send request directly to Ollama REST API (fixes Windows LangChain bug)."""
         try:
             response = requests.post(
@@ -134,196 +191,62 @@ Output ONLY one legal move in the exact format [A0 B0]. Nothing else.
             print(f"Ollama request failed: {e}")
             return ""
 
-    # def __call__(self, observation: str) -> str:
-    #     legal = extract_legal_moves(observation)
-    #     if not legal:
-    #         return ""
-
-    #     forbidden = set(extract_forbidden(observation))
-    #     legal_filtered = [m for m in legal if m not in forbidden] or legal[:]
-    #     slim = slice_board_and_moves(observation)
-    #     guidance = self.prompt_pack.guidance(slim)
-
-    #     for _ in range(4):
-    #         raw = self._llm_once(guidance)
-    #         m = MOVE_RE.search(raw)
-    #         if m:
-    #             mv = m.group(0)
-    #             if mv in legal_filtered:
-    #                 return mv
-
-    #         raw2 = self._llm_once("Output exactly one legal move [A0 B0]. DO NOTE REPEAT MOVES FOR NO STRATEGIG REASON")
-    #         m2 = MOVE_RE.search(raw2)
-    #         if m2:
-    #             mv2 = m2.group(0)
-    #             if mv2 in legal_filtered:
-    #                 return mv2
-
-    #     return random.choice(legal_filtered)
-
-    # def __call__(self, observation: str) -> str:
-    #     legal = extract_legal_moves(observation)
-    #     if not legal:
-    #         return ""
-
-    #     forbidden = set(extract_forbidden(observation))
-    #     legal_filtered = [m for m in legal if m not in forbidden] or legal[:]
-
-    #     # Get board + moves
-    #     slim = slice_board_and_moves(observation)
-
-    #     # >>> NEW: extract history directly from observation <<<
-    #     # Your tracker appended history to the raw observation earlier
-    #     history_lines = []
-    #     for line in observation.splitlines():
-    #         if line.startswith("Turn ") or "->" in line:
-    #             history_lines.append(line)
-    #     history = "\n".join(history_lines)
-
-    #     # >>> NEW: Combine slim + history into a single input <<<
-    #     full_context = slim
-    #     if history.strip():
-    #         full_context += "\n\nMOVE HISTORY:\n" + history
-
-    #     # Use combined context in the prompt pack
-    #     guidance = self.prompt_pack.guidance(full_context)
-
-    #     # LLM call loop stays identical
-    #     for _ in range(4):
-    #         raw = self._llm_once(guidance)
-    #         m = MOVE_RE.search(raw)
-    #         if m:
-    #             mv = m.group(0)
-    #             if mv in legal_filtered:
-    #                 return mv
-
-    #         raw2 = self._llm_once(
-    #             self.STRATEGIC_GUIDANCE + "\n\n" + full_context
-    #         )
-    #         m2 = MOVE_RE.search(raw2)
-    #         if m2:
-    #             mv2 = m2.group(0)
-    #             if mv2 in legal_filtered:
-    #                 return mv2
-
-    #     return random.choice(legal_filtered)
-
-    # def __call__(self, observation: str) -> str:
-    #     legal = extract_legal_moves(observation)
-    #     if not legal:
-    #         return ""
-
-    #     forbidden = set(extract_forbidden(observation))
-    #     legal_filtered = [m for m in legal if m not in forbidden] or legal[:]
-    #     slim = slice_board_and_moves(observation)
-    #     guidance = self.prompt_pack.guidance(slim)
-
-    #     for _ in range(4):
-    #         raw = self._llm_once(guidance)
-    #         m = MOVE_RE.search(raw)
-    #         if m:
-    #             mv = m.group(0)
-    #             if mv in legal_filtered:
-    #                 return mv
-
-    #         raw2 = self._llm_once("Output exactly one legal move [A0 B0]. DO NOTE REPEAT MOVES FOR NO STRATEGIG REASON")
-    #         m2 = MOVE_RE.search(raw2)
-    #         if m2:
-    #             mv2 = m2.group(0)
-    #             if mv2 in legal_filtered:
-    #                 return mv2
-
-    #     return random.choice(legal_filtered)
-
-    # def __call__(self, observation: str) -> str:
-    #     legal = extract_legal_moves(observation)
-    #     if not legal:
-    #         return ""
-
-    #     forbidden = set(extract_forbidden(observation))
-    #     legal_filtered = [m for m in legal if m not in forbidden] or legal[:]
-
-    #     # Get board + moves
-    #     slim = slice_board_and_moves(observation)
-
-    #     # >>> NEW: extract history directly from observation <<<
-    #     # Your tracker appended history to the raw observation earlier
-    #     history_lines = []
-    #     for line in observation.splitlines():
-    #         if line.startswith("Turn ") or "->" in line:
-    #             history_lines.append(line)
-    #     history = "\n".join(history_lines)
-
-    #     # >>> NEW: Combine slim + history into a single input <<<
-    #     full_context = slim
-    #     if history.strip():
-    #         full_context += "\n\nMOVE HISTORY:\n" + history
-
-    #     # Use combined context in the prompt pack
-    #     guidance = self.prompt_pack.guidance(full_context)
-
-    #     # LLM call loop stays identical
-    #     for _ in range(4):
-    #         raw = self._llm_once(guidance)
-    #         m = MOVE_RE.search(raw)
-    #         if m:
-    #             mv = m.group(0)
-    #             if mv in legal_filtered:
-    #                 return mv
-
-    #         raw2 = self._llm_once(
-    #             self.STRATEGIC_GUIDANCE + "\n\n" + full_context
-    #         )
-    #         m2 = MOVE_RE.search(raw2)
-    #         if m2:
-    #             mv2 = m2.group(0)
-    #             if mv2 in legal_filtered:
-    #                 return mv2
-
-    #     return random.choice(legal_filtered)
-
     def __call__(self, observation: str) -> str:
-        legal = extract_legal_moves(observation)
-        if not legal:
-            return ""
-        forbidden = set(extract_forbidden(observation))
-        legal_filtered = [m for m in legal if m not in forbidden] or legal[:]
-        # === HARD ANTI-REPEAT RULE ===
-        # Detect the last move in history
-        raw_history_lines = []
-        for line in observation.splitlines():
-            if line.startswith("Turn ") and ("played" in line):
-                raw_history_lines.append(line)
-
-        last_move = None
-        if raw_history_lines:
-            # Example line: "Turn 20: You played [A4 A5]"
-            last_line = raw_history_lines[-1]
-            m = MOVE_RE.search(last_line)
-            if m:
-                last_move = m.group(0)
-
-        # Filter out moves that are the exact reverse of the last move
-        if last_move:
-            src = last_move[1:3]      # A4
-            dst = last_move[4:6]      # A5
-            reverse_move = f"[{dst} {src}]"
-
-            legal_filtered = [
-                mv for mv in legal_filtered
-                if mv != reverse_move
-            ] or legal_filtered
-
         # Build context
         slim = slice_board_and_moves(observation)
+        available_moves = set(extract_legal_moves(observation))
+        forbidden_moves = set(extract_forbidden(observation))
 
         prompt_history_lines = []
         for line in observation.splitlines():
-            if line.startswith("Turn ") or "->" in line:
+            if line.startswith("Turn ") or "played[" in line:
                 prompt_history_lines.append(line)
-
         history = "\n".join(prompt_history_lines)
         full_context = slim + ("\n\nMOVE HISTORY:\n" + history if history else "")
+
+        def _detect_board_size(obs: str) -> Optional[int]:
+            """Infer board size from numeric header (e.g., '0 1 2 3')."""
+            header_re = re.compile(r"^\s*0(\s+\d+)+\s*$")
+            lines = obs.splitlines()
+            for i in range(len(lines) - 1, -1, -1):
+                if header_re.match(lines[i].strip()):
+                    nums = [int(n) for n in lines[i].split() if n.isdigit()]
+                    if nums:
+                        return max(nums) + 1
+            return None
+
+        def _build_board_map(obs: str) -> dict[str, str]:
+            size_local = _detect_board_size(obs)
+            if not size_local:
+                return {}
+            lines = obs.splitlines()
+            header_idx = None
+            header_re = re.compile(r"^\s*0(\s+\d+)+\s*$")
+            for i in range(len(lines)):
+                if header_re.match(lines[i].strip()):
+                    header_idx = i
+                    break
+            if header_idx is None:
+                return {}
+            board_map: dict[str, str] = {}
+            # Expect size_local lines after header
+            for r in range(size_local):
+                line_idx = header_idx + 1 + r
+                if line_idx >= len(lines):
+                    break
+                parts = lines[line_idx].split()
+                if not parts:
+                    continue
+                row_label = parts[0]
+                cells = parts[1:]
+                if len(cells) < size_local:
+                    continue
+                for c in range(size_local):
+                    pos = f"{row_label.upper()}{c}"
+                    board_map[pos] = cells[c]
+            return board_map
+
+        board_map = _build_board_map(observation)
 
         # >>> THE CRITICAL FIX <<<
         guidance = (
@@ -335,25 +258,125 @@ Output ONLY one legal move in the exact format [A0 B0]. Nothing else.
         recent_moves = set()
         if len(self.move_history) >= 2:
             recent_moves = {m["move"] for m in self.move_history[-2:]}
-            
-        # Now the model ALWAYS sees your anti-repeat rules
-        for _ in range(4):
-            raw = self._llm_once(guidance)
-            m = MOVE_RE.search(raw)
-            if m:
-                mv = m.group(0)
-                
-                # Check if it's a repeat of recent move
-                if mv in recent_moves and len(recent_moves) > 0:
-                    # Filter out recent moves from legal options
-                    non_repeat_moves = [lm for lm in legal_filtered if lm not in recent_moves]
-                    if non_repeat_moves:
-                        print(f"   LLM proposed recent move {mv}, trying alternatives...")
-                        legal_filtered = non_repeat_moves
-                        continue
-                
-                if mv in legal_filtered:
-                    return mv
+        
+        last_error = None
+        last_raw: str = ""
+        invalid_memory = []
+        BARE_MOVE_RE = re.compile(r"\b([A-Z]\d+)\s+([A-Z]\d+)\b")
 
-        # If everything fails, fallback to random
-        return random.choice(legal_filtered)
+        def _extract_move(raw: str):
+            m = MOVE_RE.search(raw or "")
+
+            if m:
+                return m.group(0)
+            m2 = BARE_MOVE_RE.search(raw or "")
+            if m2:
+                return f"[{m2.group(1)} {m2.group(2)}]"
+            return None
+
+        # generation + self-validation loop (4 attempts max)
+        for attempt in range(4):
+            decorated_guidance = guidance
+            if invalid_memory:
+                decorated_guidance += "\n\nPreviously invalid moves (avoid these):\n" + "\n".join(invalid_memory)
+
+            raw = self._llm_once(decorated_guidance)
+            last_raw = raw or last_raw
+            if not raw:
+                last_error = "empty response (timeout or HTTP error)"
+                continue
+
+            mv = _extract_move(raw)
+            if not mv:
+                last_error = f"no move found in response: {raw[:80]!r}"
+                continue
+
+            # Geometric sanity check: block diagonals and multi-step moves from non-Scout pieces
+            try:
+                src, dst = mv.strip("[]").split()
+                sr, sc = ord(src[0]) - 65, int(src[1:])
+                dr, dc = ord(dst[0]) - 65, int(dst[1:])
+                drow = abs(dr - sr)
+                dcol = abs(dc - sc)
+                src_token = board_map.get(src, "")
+                # Block moving empty/unknown/lake squares
+                if src_token in {"", ".", "?", "~"}:
+                    invalid_memory.append(f"{mv} (source not movable)")
+                    last_error = "source not movable"
+                    continue
+                # Diagonal
+                if drow > 0 and dcol > 0:
+                    invalid_memory.append(f"{mv} (diagonal not allowed)")
+                    last_error = "diagonal"
+                    continue
+                # Multi-step non-Scout
+                if drow + dcol > 1:
+                    is_scout = src_token.upper() in {"SC", "SCOUT"}
+                    if not is_scout:
+                        invalid_memory.append(f"{mv} (non-Scout multi-step)")
+                        last_error = "non-Scout multi-step"
+                        continue
+            except Exception:
+                pass
+
+            # quick deterministic veto using env-provided lists
+            if available_moves and mv not in available_moves:
+                invalid_memory.append(f"{mv} (not in Available Moves)")
+                last_error = f"{mv} not in Available Moves"
+                print(f"   LLM proposed move not in Available Moves: {mv}")
+                continue
+            if mv in forbidden_moves:
+                invalid_memory.append(f"{mv} (in FORBIDDEN)")
+                last_error = f"{mv} in FORBIDDEN"
+                print(f"   LLM proposed forbidden move {mv}")
+                continue
+
+            if mv in recent_moves and len(recent_moves) > 0:
+                last_error = f"repeated move {mv}"
+                print(f"   LLM proposed recent move {mv}, trying alternatives...")
+                continue
+
+            if available_moves:
+                return mv
+
+        def _first_valid_from_list(candidates):
+            for mv in candidates:
+                if available_moves and mv not in available_moves:
+                    # print(f"   Fallback move not in Available Moves: {mv}")
+                    continue
+                if mv in forbidden_moves:
+                    # print(f"   Fallback forbidden move: {mv}")
+                    continue
+                if mv in recent_moves and len(recent_moves) > 0:
+                    continue
+                if available_moves:
+                    return mv
+                # is_valid, reason = self._validate_move(full_context, mv)
+                # if is_valid:
+                #     return mv
+                # print(f"   Fallback invalid move {mv}: {reason}")
+            return None
+
+        if last_raw:
+            candidates = MOVE_RE.findall(last_raw or "")
+            if candidates:
+                mv = _first_valid_from_list(candidates)
+                if mv:
+                    return mv
+                    
+        # Try to pick a random valid move from available moves
+        obs_moves = MOVE_RE.findall(observation)
+        if obs_moves:
+            mv = _first_valid_from_list(obs_moves)
+            if mv:
+                return mv
+            non_recent = [mv for mv in obs_moves if mv not in recent_moves]
+            if non_recent:
+                return random.choice(non_recent)
+            return random.choice(obs_moves)
+
+        print(f"[AGENT] {self.model_name} failed to produce valid move after retries.")
+        if last_error:
+            print(f"   Last error: {last_error}")
+
+        return ""

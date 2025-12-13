@@ -2,10 +2,11 @@ import argparse
 import os
 import re
 import time
+import random
 # from stratego.prompt_optimizer import improve_prompt
 from stratego.env.stratego_env import StrategoEnv
 from stratego.prompts import get_prompt_pack
-from stratego.utils.parsing import extract_board_block_lines
+from stratego.utils.parsing import extract_board_block_lines, extract_legal_moves, extract_forbidden
 from stratego.utils.game_move_tracker import GameMoveTracker as MoveTrackerClass
 from stratego.utils.move_processor import process_move
 from stratego.game_logger import GameLogger
@@ -55,7 +56,7 @@ def cli():
     CUSTOM_ENV = "Stratego-custom"
     tracker = MoveTrackerClass()
     p = argparse.ArgumentParser()
-    p.add_argument("--p0", default="ollama:phi3:3.8b")
+    p.add_argument("--p0", default="ollama:deepseek-r1:32b")
     p.add_argument("--p1", default="ollama:gemma3:1b")
     # UPDATED HELP TEXT to explain how this parameter relates to VRAM utilization
     # For large models (120B, 70B), you MUST set this value based on available VRAM(13 Nov 2025)
@@ -92,8 +93,10 @@ def cli():
                 print(f"Selected: {DUEL_ENV}")
                 break
             elif choice == '3':
-                board = input("Please enter your custom board size in rang of 6~10: ").strip()
-                if board in ['6', '7', '8', '9', '10']:
+                # [CHANGE] Updated prompt range description
+                board = input("Please enter your custom board size in range of 4~9: ").strip()
+                # [CHANGE] Added '4' and '5' to valid options
+                if board in ['4', '5', '6', '7', '8', '9']:
                     args.env_id = CUSTOM_ENV
                     args.size = int(board)
                     print(f"Selected: {CUSTOM_ENV} with size {args.size}x{args.size}")
@@ -161,11 +164,47 @@ def cli():
                 print_board(observation, args.size)
             # Pass recent move history to agent
             current_agent.set_move_history(move_history[player_id][-10:])
-            observation = observation + tracker.to_prompt_string(player_id)
-            print(tracker.to_prompt_string(player_id))
+            history_str = tracker.to_prompt_string(player_id)
             
-            # The agent (LLM) generates the action
-            action = current_agent(observation)
+            # --- [CHANGE] INJECT AGGRESSION WARNING ---
+            # If the game drags on (e.g. > 20 turns), force them to wake up
+            if turn > 20:
+                observation += "\n\n[SYSTEM MESSAGE]: The game is stalling. You MUST ATTACK or ADVANCE immediately. Passive play is forbidden."
+            
+            if turn > 50:
+                 observation += "\n[CRITICAL]: STOP MOVING BACK AND FORTH. Pick a piece and move it FORWARD now."
+            # ------------------------------------------
+
+            observation = observation + history_str
+            # print(tracker.to_prompt_string(player_id))
+            lines = history_str.strip().splitlines()
+            if len(lines) <= 1:
+                print(history_str)
+            else:
+                header = lines[0:1]
+                body = lines[1:]
+                tail = body[-5:]  # Show only last 5 moves
+                print("\n".join(header + tail))
+            
+            # The agent (LLM) generates the action, retry a few times; fallback to available moves
+            action = ""
+            max_agent_attempts = 3
+            for attempt in range(max_agent_attempts):
+                action = current_agent(observation)
+                if action:
+                    break
+                print(f"[TURN {turn}] {model_name} failed to produce a move (attempt {attempt+1}/{max_agent_attempts}). Retrying...")
+
+            if not action:
+                legal = extract_legal_moves(observation)
+                forbidden = set(extract_forbidden(observation))
+                legal_filtered = [m for m in legal if m not in forbidden] or legal
+                if legal_filtered:
+                    action = random.choice(legal_filtered)
+                    print(f"[TURN {turn}] Fallback to random available move: {action}")
+                else:
+                    print(f"[TURN {turn}] No legal moves available for fallback; ending game loop.")
+                    break
             # --- NEW LOGGING FOR STRATEGY/MODEL DECISION ---
             print(f"  > AGENT DECISION: {model_name} -> {action}")
             print(f"  > Strategy/Model: Ollama Agent (T={current_agent.temperature}, Prompt='{args.prompt}')")
@@ -203,6 +242,10 @@ def cli():
             })
 
             # Process move details for logging BEFORE step
+            
+            done, info = env.step(action=action)
+            
+            # Process move details for logging
             move_details = process_move(
                 action=action,
                 board=env.env.board,
@@ -230,33 +273,62 @@ def cli():
                     else:
                         battle_outcome = "lost"
             
-            # # Extract outcome from environment observation
-            # outcome = "move"
+            # Extract outcome from environment observation
+            outcome = "move"
             # captured = ""
-            # if info and len(info) > 1:
-            #     obs_text = str(info[1]) if len(info) > 1 else ""
-            #     if "won" in obs_text.lower() or "captured" in obs_text.lower():
-            #         outcome = "won_battle"
-            #         # Try to extract captured piece name
-            #         cap_match = re.search(r'captured.*?(\w+)', obs_text, re.IGNORECASE)
-            #         if cap_match:
-            #             captured = cap_match.group(1)
-            #     elif "lost" in obs_text.lower() or "defeated" in obs_text.lower():
-            #         outcome = "lost_battle"
-            #     elif "draw" in obs_text.lower() or "tie" in obs_text.lower():
-            #         outcome = "draw"
-            #     elif "invalid" in obs_text.lower() or "illegal" in obs_text.lower():
-            #         outcome = "invalid"
+            obs_text = ""
+            # if isinstance(info, (list, tuple)) and len(info) > 1:
+            #     obs_text = str(info[1])
+            # else:
+            #     obs_text = str(info)
+            if isinstance(info, (list, tuple)):
+                if 0 <= player_id < len(info):
+                    obs_text = str(info[player_id])
+                else:
+                    obs_text = " ".join(str(x) for x in info)
+            else:
+                obs_text = str(info)
+
+            low = obs_text.lower()
+            if "invalid" in low or "illegal" in low:
+                outcome = "invalid"
+            elif "captured" in low or "won the battle" in low:
+                outcome = "won_battle"
+            elif "lost the battle" in low or "defeated" in low:
+                outcome = "lost_battle"
+            elif "draw" in low or "tie" in low:
+                outcome = "draw"
                     
             event = info.get("event") if isinstance(info, dict) else None
             extra = info.get("detail") if isinstance(info, dict) else None
+            
+            if outcome != "invalid":
+                # Record this move in history
+                move_history[player_id].append({
+                    "turn": turn,
+                    "move": action,
+                    "text": f"Turn {turn}: You played {action}"
+                })
 
-            tracker.record(
-                player=player_id,
-                move=action,
-                event=event,
-                extra=extra
-            )
+                tracker.record(
+                    player=player_id,
+                    move=action,
+                    event=event,
+                    extra=extra
+                )
+            else:
+                move_history[player_id].append({
+                    "turn": turn,
+                    "move": action,
+                    "text": f"Turn {turn}: INVALID move {action}"
+                })
+                tracker.record(
+                    player=player_id,
+                    move=action,
+                    event="invalid_move",
+                    extra=extra
+                )
+                print(f"[HISTORY] Skipping invalid move from history: {action}")
 
             logger.log_move(turn=turn,
                                 player=player_id,
@@ -307,7 +379,37 @@ def cli():
         print("\nDetails:")
         print(f"Final Rewards: {rewards}")
         print(f"Game Info: {game_info}")
-        
+    
+    try:
+        invalid_players = [
+            pid for pid, info_dict in (game_info or {}).items()
+            if isinstance(info_dict, dict) and info_dict.get("invalid_move")
+        ]
+        if invalid_players:
+            import csv
+            csv_path = logger.path
+            rows = []
+            fieldnames = None
+
+            with open(csv_path, "r", encoding="utf-8", newline="") as f:
+                reader = csv.DictReader(f)
+                fieldnames = reader.fieldnames
+                for r in reader:
+                    rows.append(r)
+
+            if rows and fieldnames and "outcome" in fieldnames:
+                rows[-1]["outcome"] = "invalid"
+                with open(csv_path, "w", encoding="utf-8", newline="") as f:
+                    writer = csv.DictWriter(f, fieldnames=fieldnames)
+                    writer.writeheader()
+                    writer.writerows(rows)
+
+                print("\n[LOG PATCH] Last move outcome patched to 'invalid' "
+                      f"(player {invalid_players[0]} made an invalid move).")
+                
+    except Exception as e:
+        print(f"[LOG PATCH] Failed to patch CSV outcome: {e}")
+            
         # Finalize the game log with winner info in every row
         logger.finalize_game(winner=winner, game_result=game_result)
     
