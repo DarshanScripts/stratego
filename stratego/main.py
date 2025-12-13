@@ -291,11 +291,11 @@ def cli():
 
     if p0_score > p1_score:
         winner = 0
-        print(f"\n🏆 * * * PLAYER 0 WINS! * * * 🏆")
+        print(f"\n🏆 * * * PLAYER 1 WINS! * * * 🏆")
         print(f"Agent: {agents[0].model_name}")
     elif p1_score > p0_score:
         winner = 1
-        print(f"\n🏆 * * * PLAYER 1 WINS! * * * 🏆")
+        print(f"\n🏆 * * * PLAYER 2 WINS! * * * 🏆")
         print(f"Agent: {agents[1].model_name}")
     else:
         print(f"\n🤝 * * * IT'S A DRAW! * * * 🤝")

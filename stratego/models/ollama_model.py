@@ -90,23 +90,23 @@ Evaluate all legal moves and pick the one that:
 
 Output ONLY one legal move in the exact format [A0 B0]. Nothing else.
 """
-        self.VALIDATION_GUIDANCE = """
-You are validating a Stratego move. Decide if the move obeys Stratego rules given the board and history.
-Rules to enforce:
-- Pieces cannot move into lakes or off-board.
-- Immovable pieces (Bomb, Flag) cannot move.
-- A piece cannot capture its own piece.
-- Only Scouts can move more than one square in straight lines; others move exactly one square orthogonally.
-- No diagonal movement.
-- Respect revealed information from history (if it moved before, it is not a Bomb/Flag).
-- If an 'Available Moves:' list is present, moves not in that list are almost always invalid.
-- If a 'FORBIDDEN' list is present, those moves are invalid.
-- On small custom boards (size <= 5), there are NO lakes unless the board explicitly shows '~'. If you do not see '~', assume no lakes exist.
+#         self.VALIDATION_GUIDANCE = """
+# You are validating a Stratego move. Decide if the move obeys Stratego rules given the board and history.
+# Rules to enforce:
+# - Pieces cannot move into lakes or off-board.
+# - Immovable pieces (Bomb, Flag) cannot move.
+# - A piece cannot capture its own piece.
+# - Only Scouts can move more than one square in straight lines; others move exactly one square orthogonally.
+# - No diagonal movement.
+# - Respect revealed information from history (if it moved before, it is not a Bomb/Flag).
+# - If an 'Available Moves:' list is present, moves not in that list are almost always invalid.
+# - If a 'FORBIDDEN' list is present, those moves are invalid.
+# - On small custom boards (size <= 5), there are NO lakes unless the board explicitly shows '~'. If you do not see '~', assume no lakes exist.
 
-Respond with either:
-- VALID
-- INVALID: <short reason>
-"""
+# Respond with either:
+# - VALID
+# - INVALID: <short reason>
+# """
         if isinstance(prompt_pack, str) or prompt_pack is None:
             self.prompt_pack: PromptPack = get_prompt_pack(prompt_pack)
         else:
@@ -215,8 +215,38 @@ Respond with either:
                         return max(nums) + 1
             return None
 
-        board_size = _detect_board_size(observation)
-        skip_validation = board_size is not None and board_size <= 5
+        def _build_board_map(obs: str) -> dict[str, str]:
+            size_local = _detect_board_size(obs)
+            if not size_local:
+                return {}
+            lines = obs.splitlines()
+            header_idx = None
+            header_re = re.compile(r"^\s*0(\s+\d+)+\s*$")
+            for i in range(len(lines)):
+                if header_re.match(lines[i].strip()):
+                    header_idx = i
+                    break
+            if header_idx is None:
+                return {}
+            board_map: dict[str, str] = {}
+            # Expect size_local lines after header
+            for r in range(size_local):
+                line_idx = header_idx + 1 + r
+                if line_idx >= len(lines):
+                    break
+                parts = lines[line_idx].split()
+                if not parts:
+                    continue
+                row_label = parts[0]
+                cells = parts[1:]
+                if len(cells) < size_local:
+                    continue
+                for c in range(size_local):
+                    pos = f"{row_label.upper()}{c}"
+                    board_map[pos] = cells[c]
+            return board_map
+
+        board_map = _build_board_map(observation)
 
         # >>> THE CRITICAL FIX <<<
         guidance = (
@@ -261,6 +291,34 @@ Respond with either:
                 last_error = f"no move found in response: {raw[:80]!r}"
                 continue
 
+            # Geometric sanity check: block diagonals and multi-step moves from non-Scout pieces
+            try:
+                src, dst = mv.strip("[]").split()
+                sr, sc = ord(src[0]) - 65, int(src[1:])
+                dr, dc = ord(dst[0]) - 65, int(dst[1:])
+                drow = abs(dr - sr)
+                dcol = abs(dc - sc)
+                src_token = board_map.get(src, "")
+                # Block moving empty/unknown/lake squares
+                if src_token in {"", ".", "?", "~"}:
+                    invalid_memory.append(f"{mv} (source not movable)")
+                    last_error = "source not movable"
+                    continue
+                # Diagonal
+                if drow > 0 and dcol > 0:
+                    invalid_memory.append(f"{mv} (diagonal not allowed)")
+                    last_error = "diagonal"
+                    continue
+                # Multi-step non-Scout
+                if drow + dcol > 1:
+                    is_scout = src_token.upper() in {"SC", "SCOUT"}
+                    if not is_scout:
+                        invalid_memory.append(f"{mv} (non-Scout multi-step)")
+                        last_error = "non-Scout multi-step"
+                        continue
+            except Exception:
+                pass
+
             # quick deterministic veto using env-provided lists
             if available_moves and mv not in available_moves:
                 invalid_memory.append(f"{mv} (not in Available Moves)")
@@ -278,16 +336,8 @@ Respond with either:
                 print(f"   LLM proposed recent move {mv}, trying alternatives...")
                 continue
 
-            if skip_validation:
-                is_valid, reason = True, ""
-            else:
-                is_valid, reason = self._validate_move(full_context, mv)
-            if is_valid:
+            if available_moves:
                 return mv
-
-            invalid_memory.append(f"{mv} ({reason})")
-            print(f"   LLM proposed invalid move {mv}: {reason}")
-            last_error = reason
 
         def _first_valid_from_list(candidates):
             for mv in candidates:
@@ -299,6 +349,8 @@ Respond with either:
                     continue
                 if mv in recent_moves and len(recent_moves) > 0:
                     continue
+                if available_moves:
+                    return mv
                 is_valid, reason = self._validate_move(full_context, mv)
                 if is_valid:
                     return mv
