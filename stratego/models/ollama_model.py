@@ -148,24 +148,24 @@ Output ONLY one legal move in the exact format [A0 B0]. Nothing else.
         """Set the recent move history for this agent."""
         self.move_history = history
 
-    def _validate_move(self, context: str, move: str) -> Tuple[bool, str]:
-        """Ask the LLM to self-check legality based on board + history."""
-        prompt = (
-            self.VALIDATION_GUIDANCE
-            + "\n\nBOARD + HISTORY CONTEXT:\n"
-            + context
-            + f"\n\nCANDIDATE MOVE: {move}\nRespond strictly with VALID or INVALID and a reason."
-        )
-        verdict = self._llm_once(prompt)
-        if not verdict:
-            return False, "empty validation response"
-        verdict_upper = verdict.strip().upper()
-        if verdict_upper.startswith("VALID"):
-            return True, ""
-        if verdict_upper.startswith("INVALID"):
-            reason = verdict.split(":", 1)[1].strip() if ":" in verdict else "marked invalid"
-            return False, reason
-        return False, f"unrecognized verdict: {verdict[:60]}"
+    # def _validate_move(self, context: str, move: str) -> Tuple[bool, str]:
+    #     """Ask the LLM to self-check legality based on board + history."""
+    #     prompt = (
+    #         self.VALIDATION_GUIDANCE
+    #         + "\n\nBOARD + HISTORY CONTEXT:\n"
+    #         + context
+    #         + f"\n\nCANDIDATE MOVE: {move}\nRespond strictly with VALID or INVALID and a reason."
+    #     )
+    #     verdict = self._llm_once(prompt)
+    #     if not verdict:
+    #         return False, "empty validation response"
+    #     verdict_upper = verdict.strip().upper()
+    #     if verdict_upper.startswith("VALID"):
+    #         return True, ""
+    #     if verdict_upper.startswith("INVALID"):
+    #         reason = verdict.split(":", 1)[1].strip() if ":" in verdict else "marked invalid"
+    #         return False, reason
+    #     return False, f"unrecognized verdict: {verdict[:60]}"
 
     # Run one LLM call
     def _llm_once(self, prompt: str) -> str:
@@ -351,9 +351,9 @@ Output ONLY one legal move in the exact format [A0 B0]. Nothing else.
                     continue
                 if available_moves:
                     return mv
-                is_valid, reason = self._validate_move(full_context, mv)
-                if is_valid:
-                    return mv
+                # is_valid, reason = self._validate_move(full_context, mv)
+                # if is_valid:
+                #     return mv
                 # print(f"   Fallback invalid move {mv}: {reason}")
             return None
 
