@@ -151,6 +151,14 @@ def cli():
             current_agent.set_move_history(move_history[player_id][-10:])
             history_str = tracker.to_prompt_string(player_id)
             
+            # [FIX - 13 Dec 2025] Inject board size constraints for small boards
+            # Explicitly reminds LLM of valid coordinate ranges to prevent boundary violations
+            board_size_hint = ""
+            if args.size <= 6:
+                max_row = chr(64 + args.size)  # A=1, B=2, etc. So 4->D, 5->E, 6->F
+                max_col = args.size - 1
+                board_size_hint = f"\n\n[BOARD SIZE: {args.size}x{args.size}. Valid coordinates: A0-{max_row}{max_col}. You can ONLY move uppercase pieces (yours), NOT '?' pieces (opponent's).]\n"
+            
             # --- [CHANGE] INJECT AGGRESSION WARNING ---
             # If the game drags on (e.g. > 20 turns), force them to wake up
             if turn > 20:
@@ -160,7 +168,8 @@ def cli():
                  observation += "\n[CRITICAL]: STOP MOVING BACK AND FORTH. Pick a piece and move it FORWARD now."
             # ------------------------------------------
 
-            observation = observation + history_str
+            # [FIX - 13 Dec 2025] Append board size hint before history to improve context
+            observation = observation + board_size_hint + history_str
             # print(tracker.to_prompt_string(player_id))
             lines = history_str.strip().splitlines()
             if len(lines) <= 1:
@@ -291,11 +300,11 @@ def cli():
 
     if p0_score > p1_score:
         winner = 0
-        print(f"\n🏆 * * * PLAYER 0 WINS! * * * 🏆")
+        print(f"\n🏆 * * * PLAYER 1 WINS! * * * 🏆")
         print(f"Agent: {agents[0].model_name}")
     elif p1_score > p0_score:
         winner = 1
-        print(f"\n🏆 * * * PLAYER 1 WINS! * * * 🏆")
+        print(f"\n🏆 * * * PLAYER 2 WINS! * * * 🏆")
         print(f"Agent: {agents[1].model_name}")
     else:
         print(f"\n🤝 * * * IT'S A DRAW! * * * 🤝")

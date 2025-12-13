@@ -35,6 +35,8 @@ class OllamaAgent(AgentLike):
     ):
         self.model_name = model_name
 
+        # [FIX - 13 Dec 2025] Enhanced strategic guidance to prevent invalid moves on small boards
+        # Added explicit rules about piece ownership (uppercase vs '?') and board boundaries
         self.STRATEGIC_GUIDANCE = """
 You are a skilled Stratego player.
 You must choose the SINGLE best legal move from the given board, legal moves, forbidden moves, and move history.
@@ -46,6 +48,8 @@ GENERAL RULES:
 4. NEVER repeat a previous move unless it creates a tactical advantage (capture, reveal, escape).
 5. AVOID back-and-forth oscillations (e.g., A5->A6 then A6->A5).
 6. It would be considered a SERIOUS MISTAKE, which leads you to lose the game, to attempt illegal moves such as moving a Flag or Bomb, moving in an impossible way, moving upon its own pieces, or trying to move opponent's pieces.
+7. CRITICAL: You can ONLY move YOUR OWN pieces. Uppercase letters (SP, MS, FL, BM, etc.) are YOUR pieces. Question marks (?) are OPPONENT pieces - you CANNOT move them.
+8. CRITICAL: Respect board boundaries. Check the column numbers in the board header (0 1 2 3 means valid cols are 0-3). On a 4x4 board, valid coordinates are A0-D3 ONLY.
 
 STRATEGIC PRINCIPLES:
 1. Avoid random or pointless shuffling of pieces.
@@ -90,18 +94,21 @@ Evaluate all legal moves and pick the one that:
 
 Output ONLY one legal move in the exact format [A0 B0]. Nothing else.
 """
+        # [FIX - 13 Dec 2025] Strengthened validation guidance with explicit board size constraints
+        # Added rules for piece ownership validation and coordinate boundary checks
         self.VALIDATION_GUIDANCE = """
 You are validating a Stratego move. Decide if the move obeys Stratego rules given the board and history.
-Rules to enforce:
-- Pieces cannot move into lakes or off-board.
-- Immovable pieces (Bomb, Flag) cannot move.
-- A piece cannot capture its own piece.
-- Only Scouts can move more than one square in straight lines; others move exactly one square orthogonally.
-- No diagonal movement.
-- Respect revealed information from history (if it moved before, it is not a Bomb/Flag).
-- If an 'Available Moves:' list is present, moves not in that list are almost always invalid.
-- If a 'FORBIDDEN' list is present, those moves are invalid.
-- On small custom boards (size <= 5), there are NO lakes unless the board explicitly shows '~'. If you do not see '~', assume no lakes exist.
+
+CRITICAL RULES:
+1. **Board coordinates**: Check the board header to determine valid range. On a 4x4 board, only A0-D3 are valid. On 5x5, only A0-E4. Any move outside these ranges is INVALID.
+2. **Piece ownership**: The source square MUST contain a piece belonging to the current player (shown in uppercase like SP, MS, BM, etc.). Pieces marked '?' belong to the opponent and CANNOT be moved.
+3. **Immovable pieces**: Bombs (BM) and Flags (FL) cannot move.
+4. **Movement range**: Only Scouts can move multiple squares. All other pieces move exactly 1 square orthogonally.
+5. **No diagonal movement**: Only horizontal or vertical moves are allowed.
+6. **Available Moves list**: If present, the move MUST be in this list or it is INVALID.
+7. **FORBIDDEN list**: If present, any move in this list is INVALID.
+8. **Lakes**: On small boards (size <= 5), there are NO lakes unless the board explicitly shows '~'.
+9. **Own pieces**: A piece cannot move onto a square occupied by its own piece.
 
 Respond with either:
 - VALID
@@ -196,6 +203,11 @@ Respond with either:
         slim = slice_board_and_moves(observation)
         available_moves = set(extract_legal_moves(observation))
         forbidden_moves = set(extract_forbidden(observation))
+        
+        # [FIX - 13 Dec 2025] Log available moves to help diagnose invalid move issues
+        # This shows how many legal options the LLM has to choose from
+        if available_moves:
+            print(f"   Valid moves available: {len(available_moves)} options")
 
         prompt_history_lines = []
         for line in observation.splitlines():
@@ -204,6 +216,8 @@ Respond with either:
         history = "\n".join(prompt_history_lines)
         full_context = slim + ("\n\nMOVE HISTORY:\n" + history if history else "")
 
+        # [FIX - 13 Dec 2025] Detect board size for boundary validation
+        # Used to pre-filter moves that exceed board boundaries before LLM validation
         def _detect_board_size(obs: str) -> Optional[int]:
             """Infer board size from numeric header (e.g., '0 1 2 3')."""
             header_re = re.compile(r"^\s*0(\s+\d+)+\s*$")
@@ -216,7 +230,9 @@ Respond with either:
             return None
 
         board_size = _detect_board_size(observation)
-        skip_validation = board_size is not None and board_size <= 5
+        # [FIX - 13 Dec 2025] REMOVED skip_validation flag that was causing invalid moves
+        # Small boards need MORE validation, not less, because LLMs hallucinate coordinates more often
+        # All moves are now validated regardless of board size
 
         # >>> THE CRITICAL FIX <<<
         guidance = (
@@ -233,6 +249,24 @@ Respond with either:
         last_raw: str = ""
         invalid_memory = []
         BARE_MOVE_RE = re.compile(r"\b([A-Z]\d+)\s+([A-Z]\d+)\b")
+        
+        # [FIX - 13 Dec 2025] Helper to check if move coordinates are within board boundaries
+        # Pre-filters obviously invalid moves before expensive LLM validation
+        def _is_within_bounds(move_str: str) -> bool:
+            """Check if move coordinates are within detected board size."""
+            if board_size is None:
+                return True  # Can't validate without board size
+            match = re.search(r'\[([A-Z])(\d+)\s+([A-Z])(\d+)\]', move_str)
+            if not match:
+                return False
+            src_row, src_col, dst_row, dst_col = match.groups()
+            max_row_char = chr(64 + board_size)  # e.g., 'D' for 4x4
+            max_col = board_size - 1
+            try:
+                return (src_row <= max_row_char and dst_row <= max_row_char and 
+                        int(src_col) <= max_col and int(dst_col) <= max_col)
+            except ValueError:
+                return False
 
         def _extract_move(raw: str):
             m = MOVE_RE.search(raw or "")
@@ -260,6 +294,14 @@ Respond with either:
             if not mv:
                 last_error = f"no move found in response: {raw[:80]!r}"
                 continue
+            
+            # [FIX - 13 Dec 2025] Pre-check: Reject moves outside board boundaries
+            # This catches coordinate hallucinations early (e.g., E0 on a 4x4 board)
+            if not _is_within_bounds(mv):
+                invalid_memory.append(f"{mv} (coordinates outside {board_size}x{board_size} board)")
+                last_error = f"{mv} exceeds board boundaries"
+                print(f"   LLM proposed out-of-bounds move: {mv}")
+                continue
 
             # quick deterministic veto using env-provided lists
             if available_moves and mv not in available_moves:
@@ -278,10 +320,9 @@ Respond with either:
                 print(f"   LLM proposed recent move {mv}, trying alternatives...")
                 continue
 
-            if skip_validation:
-                is_valid, reason = True, ""
-            else:
-                is_valid, reason = self._validate_move(full_context, mv)
+            # [FIX - 13 Dec 2025] Always validate moves using LLM self-check
+            # Previously small boards skipped validation, causing invalid moves to reach environment
+            is_valid, reason = self._validate_move(full_context, mv)
             if is_valid:
                 return mv
 
@@ -289,20 +330,23 @@ Respond with either:
             print(f"   LLM proposed invalid move {mv}: {reason}")
             last_error = reason
 
+        # [FIX - 13 Dec 2025] Enhanced fallback logic with boundary and ownership checks
+        # Ensures fallback moves are also validated before being returned
         def _first_valid_from_list(candidates):
             for mv in candidates:
+                # STRICT: If available_moves exists, only use those
                 if available_moves and mv not in available_moves:
-                    # print(f"   Fallback move not in Available Moves: {mv}")
                     continue
                 if mv in forbidden_moves:
-                    # print(f"   Fallback forbidden move: {mv}")
                     continue
                 if mv in recent_moves and len(recent_moves) > 0:
+                    continue
+                # Check boundaries before expensive LLM validation
+                if not _is_within_bounds(mv):
                     continue
                 is_valid, reason = self._validate_move(full_context, mv)
                 if is_valid:
                     return mv
-                # print(f"   Fallback invalid move {mv}: {reason}")
             return None
 
         if last_raw:
@@ -312,16 +356,29 @@ Respond with either:
                 if mv:
                     return mv
                     
-        # Try to pick a random valid move from available moves
+        # [FIX - 13 Dec 2025] CRITICAL FALLBACK: Prioritize environment-provided available moves
+        # If LLM validation fails, select directly from the Available Moves list to avoid invalid moves
+        if available_moves:
+            valid_list = list(available_moves - forbidden_moves - recent_moves)
+            if valid_list:
+                print(f"   [FALLBACK] Picking random from {len(valid_list)} available moves")
+                return random.choice(valid_list)
+            # If all moves are recent, just pick any available (avoiding only forbidden)
+            valid_list = list(available_moves - forbidden_moves)
+            if valid_list:
+                print(f"   [FALLBACK] Picking from {len(valid_list)} moves (allowing repeats)")
+                return random.choice(valid_list)
+        
+        # Last resort: extract from observation text
         obs_moves = MOVE_RE.findall(observation)
         if obs_moves:
             mv = _first_valid_from_list(obs_moves)
             if mv:
                 return mv
-            non_recent = [mv for mv in obs_moves if mv not in recent_moves]
-            if non_recent:
-                return random.choice(non_recent)
-            return random.choice(obs_moves)
+            # Filter by boundaries at minimum
+            valid_obs = [m for m in obs_moves if _is_within_bounds(m)]
+            if valid_obs:
+                return random.choice(valid_obs)
 
         print(f"[AGENT] {self.model_name} failed to produce valid move after retries.")
         if last_error:
