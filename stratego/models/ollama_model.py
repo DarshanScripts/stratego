@@ -101,6 +101,7 @@ Rules to enforce:
 - Respect revealed information from history (if it moved before, it is not a Bomb/Flag).
 - If an 'Available Moves:' list is present, moves not in that list are almost always invalid.
 - If a 'FORBIDDEN' list is present, those moves are invalid.
+- On small custom boards (size <= 5), there are NO lakes unless the board explicitly shows '~'. If you do not see '~', assume no lakes exist.
 
 Respond with either:
 - VALID
@@ -203,6 +204,20 @@ Respond with either:
         history = "\n".join(prompt_history_lines)
         full_context = slim + ("\n\nMOVE HISTORY:\n" + history if history else "")
 
+        def _detect_board_size(obs: str) -> Optional[int]:
+            """Infer board size from numeric header (e.g., '0 1 2 3')."""
+            header_re = re.compile(r"^\s*0(\s+\d+)+\s*$")
+            lines = obs.splitlines()
+            for i in range(len(lines) - 1, -1, -1):
+                if header_re.match(lines[i].strip()):
+                    nums = [int(n) for n in lines[i].split() if n.isdigit()]
+                    if nums:
+                        return max(nums) + 1
+            return None
+
+        board_size = _detect_board_size(observation)
+        skip_validation = board_size is not None and board_size <= 5
+
         # >>> THE CRITICAL FIX <<<
         guidance = (
             self.STRATEGIC_GUIDANCE
@@ -217,7 +232,7 @@ Respond with either:
         last_error = None
         last_raw: str = ""
         invalid_memory = []
-        BARE_MOVE_RE = re.compile(r"\b([A-J]\d)\s+([A-J]\d)\b")
+        BARE_MOVE_RE = re.compile(r"\b([A-Z]\d+)\s+([A-Z]\d+)\b")
 
         def _extract_move(raw: str):
             m = MOVE_RE.search(raw or "")
@@ -263,7 +278,10 @@ Respond with either:
                 print(f"   LLM proposed recent move {mv}, trying alternatives...")
                 continue
 
-            is_valid, reason = self._validate_move(full_context, mv)
+            if skip_validation:
+                is_valid, reason = True, ""
+            else:
+                is_valid, reason = self._validate_move(full_context, mv)
             if is_valid:
                 return mv
 
