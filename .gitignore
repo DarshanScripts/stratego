@@ -211,3 +211,5 @@ __marimo__/
 
 logs/
 game_summaries.json
+
+stratego/prompts/current_prompt.txt

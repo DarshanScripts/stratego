@@ -24,11 +24,6 @@ PROMPTS = [
         "{board_slice}\nPick one move from 'Available Moves:' and avoid 'FORBIDDEN:'.",
     ),
     PromptPack(
-        "aggressive",
-        "You are a Stratego AI that favors attacks and forward advancement.",
-        "{board_slice}\nChoose an aggressive move from 'Available Moves:' but avoid 'FORBIDDEN:'.",
-    ),
-    PromptPack(
         "defensive",
         "You are a defensive Stratego AI. Prefer safe and backward moves.",
         "{board_slice}\nPick one safe move and avoid 'FORBIDDEN:'.",

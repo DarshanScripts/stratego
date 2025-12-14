@@ -94,26 +94,23 @@ Evaluate all legal moves and pick the one that:
 
 Output ONLY one legal move in the exact format [A0 B0]. Nothing else.
 """
-        # [FIX - 13 Dec 2025] Strengthened validation guidance with explicit board size constraints
-        # Added rules for piece ownership validation and coordinate boundary checks
-        self.VALIDATION_GUIDANCE = """
-You are validating a Stratego move. Decide if the move obeys Stratego rules given the board and history.
+#         self.VALIDATION_GUIDANCE = """
+# You are validating a Stratego move. Decide if the move obeys Stratego rules given the board and history.
+# Rules to enforce:
+# - Pieces cannot move into lakes or off-board.
+# - Immovable pieces (Bomb, Flag) cannot move.
+# - A piece cannot capture its own piece.
+# - Only Scouts can move more than one square in straight lines; others move exactly one square orthogonally.
+# - No diagonal movement.
+# - Respect revealed information from history (if it moved before, it is not a Bomb/Flag).
+# - If an 'Available Moves:' list is present, moves not in that list are almost always invalid.
+# - If a 'FORBIDDEN' list is present, those moves are invalid.
+# - On small custom boards (size <= 5), there are NO lakes unless the board explicitly shows '~'. If you do not see '~', assume no lakes exist.
 
-CRITICAL RULES:
-1. **Board coordinates**: Check the board header to determine valid range. On a 4x4 board, only A0-D3 are valid. On 5x5, only A0-E4. Any move outside these ranges is INVALID.
-2. **Piece ownership**: The source square MUST contain a piece belonging to the current player (shown in uppercase like SP, MS, BM, etc.). Pieces marked '?' belong to the opponent and CANNOT be moved.
-3. **Immovable pieces**: Bombs (BM) and Flags (FL) cannot move.
-4. **Movement range**: Only Scouts can move multiple squares. All other pieces move exactly 1 square orthogonally.
-5. **No diagonal movement**: Only horizontal or vertical moves are allowed.
-6. **Available Moves list**: If present, the move MUST be in this list or it is INVALID.
-7. **FORBIDDEN list**: If present, any move in this list is INVALID.
-8. **Lakes**: On small boards (size <= 5), there are NO lakes unless the board explicitly shows '~'.
-9. **Own pieces**: A piece cannot move onto a square occupied by its own piece.
-
-Respond with either:
-- VALID
-- INVALID: <short reason>
-"""
+# Respond with either:
+# - VALID
+# - INVALID: <short reason>
+# """
         if isinstance(prompt_pack, str) or prompt_pack is None:
             self.prompt_pack: PromptPack = get_prompt_pack(prompt_pack)
         else:
@@ -155,24 +152,24 @@ Respond with either:
         """Set the recent move history for this agent."""
         self.move_history = history
 
-    def _validate_move(self, context: str, move: str) -> Tuple[bool, str]:
-        """Ask the LLM to self-check legality based on board + history."""
-        prompt = (
-            self.VALIDATION_GUIDANCE
-            + "\n\nBOARD + HISTORY CONTEXT:\n"
-            + context
-            + f"\n\nCANDIDATE MOVE: {move}\nRespond strictly with VALID or INVALID and a reason."
-        )
-        verdict = self._llm_once(prompt)
-        if not verdict:
-            return False, "empty validation response"
-        verdict_upper = verdict.strip().upper()
-        if verdict_upper.startswith("VALID"):
-            return True, ""
-        if verdict_upper.startswith("INVALID"):
-            reason = verdict.split(":", 1)[1].strip() if ":" in verdict else "marked invalid"
-            return False, reason
-        return False, f"unrecognized verdict: {verdict[:60]}"
+    # def _validate_move(self, context: str, move: str) -> Tuple[bool, str]:
+    #     """Ask the LLM to self-check legality based on board + history."""
+    #     prompt = (
+    #         self.VALIDATION_GUIDANCE
+    #         + "\n\nBOARD + HISTORY CONTEXT:\n"
+    #         + context
+    #         + f"\n\nCANDIDATE MOVE: {move}\nRespond strictly with VALID or INVALID and a reason."
+    #     )
+    #     verdict = self._llm_once(prompt)
+    #     if not verdict:
+    #         return False, "empty validation response"
+    #     verdict_upper = verdict.strip().upper()
+    #     if verdict_upper.startswith("VALID"):
+    #         return True, ""
+    #     if verdict_upper.startswith("INVALID"):
+    #         reason = verdict.split(":", 1)[1].strip() if ":" in verdict else "marked invalid"
+    #         return False, reason
+    #     return False, f"unrecognized verdict: {verdict[:60]}"
 
     # Run one LLM call
     def _llm_once(self, prompt: str) -> str:
@@ -229,10 +226,38 @@ Respond with either:
                         return max(nums) + 1
             return None
 
-        board_size = _detect_board_size(observation)
-        # [FIX - 13 Dec 2025] REMOVED skip_validation flag that was causing invalid moves
-        # Small boards need MORE validation, not less, because LLMs hallucinate coordinates more often
-        # All moves are now validated regardless of board size
+        def _build_board_map(obs: str) -> dict[str, str]:
+            size_local = _detect_board_size(obs)
+            if not size_local:
+                return {}
+            lines = obs.splitlines()
+            header_idx = None
+            header_re = re.compile(r"^\s*0(\s+\d+)+\s*$")
+            for i in range(len(lines)):
+                if header_re.match(lines[i].strip()):
+                    header_idx = i
+                    break
+            if header_idx is None:
+                return {}
+            board_map: dict[str, str] = {}
+            # Expect size_local lines after header
+            for r in range(size_local):
+                line_idx = header_idx + 1 + r
+                if line_idx >= len(lines):
+                    break
+                parts = lines[line_idx].split()
+                if not parts:
+                    continue
+                row_label = parts[0]
+                cells = parts[1:]
+                if len(cells) < size_local:
+                    continue
+                for c in range(size_local):
+                    pos = f"{row_label.upper()}{c}"
+                    board_map[pos] = cells[c]
+            return board_map
+
+        board_map = _build_board_map(observation)
 
         # >>> THE CRITICAL FIX <<<
         guidance = (
@@ -294,14 +319,34 @@ Respond with either:
             if not mv:
                 last_error = f"no move found in response: {raw[:80]!r}"
                 continue
-            
-            # [FIX - 13 Dec 2025] Pre-check: Reject moves outside board boundaries
-            # This catches coordinate hallucinations early (e.g., E0 on a 4x4 board)
-            if not _is_within_bounds(mv):
-                invalid_memory.append(f"{mv} (coordinates outside {board_size}x{board_size} board)")
-                last_error = f"{mv} exceeds board boundaries"
-                print(f"   LLM proposed out-of-bounds move: {mv}")
-                continue
+
+            # Geometric sanity check: block diagonals and multi-step moves from non-Scout pieces
+            try:
+                src, dst = mv.strip("[]").split()
+                sr, sc = ord(src[0]) - 65, int(src[1:])
+                dr, dc = ord(dst[0]) - 65, int(dst[1:])
+                drow = abs(dr - sr)
+                dcol = abs(dc - sc)
+                src_token = board_map.get(src, "")
+                # Block moving empty/unknown/lake squares
+                if src_token in {"", ".", "?", "~"}:
+                    invalid_memory.append(f"{mv} (source not movable)")
+                    last_error = "source not movable"
+                    continue
+                # Diagonal
+                if drow > 0 and dcol > 0:
+                    invalid_memory.append(f"{mv} (diagonal not allowed)")
+                    last_error = "diagonal"
+                    continue
+                # Multi-step non-Scout
+                if drow + dcol > 1:
+                    is_scout = src_token.upper() in {"SC", "SCOUT"}
+                    if not is_scout:
+                        invalid_memory.append(f"{mv} (non-Scout multi-step)")
+                        last_error = "non-Scout multi-step"
+                        continue
+            except Exception:
+                pass
 
             # quick deterministic veto using env-provided lists
             if available_moves and mv not in available_moves:
@@ -324,6 +369,7 @@ Respond with either:
             # Previously small boards skipped validation, causing invalid moves to reach environment
             is_valid, reason = self._validate_move(full_context, mv)
             if is_valid:
+            if available_moves:
                 return mv
 
             invalid_memory.append(f"{mv} ({reason})")
@@ -341,12 +387,12 @@ Respond with either:
                     continue
                 if mv in recent_moves and len(recent_moves) > 0:
                     continue
-                # Check boundaries before expensive LLM validation
-                if not _is_within_bounds(mv):
-                    continue
-                is_valid, reason = self._validate_move(full_context, mv)
-                if is_valid:
+                if available_moves:
                     return mv
+                # is_valid, reason = self._validate_move(full_context, mv)
+                # if is_valid:
+                #     return mv
+                # print(f"   Fallback invalid move {mv}: {reason}")
             return None
 
         if last_raw:
