@@ -56,6 +56,56 @@ OUTPUT:
             with open(self.base_path, "r", encoding="utf-8") as f:
                 return f.read()
         return self.DEFAULT_PROMPT
+
+    @staticmethod
+    def extract_improvements(prompt_text: str) -> list[str]:
+        """Pull the strategic improvements section (lines starting with bullets)."""
+        if not prompt_text:
+            return []
+        lines = prompt_text.splitlines()
+        improvements: list[str] = []
+        in_section = False
+        for line in lines:
+            if line.strip().startswith("--- STRATEGIC IMPROVEMENTS"):
+                in_section = True
+                continue
+            if in_section:
+                stripped = line.strip()
+                if stripped.startswith(("??", "-", "•", "*")):
+                    cleaned = stripped.lstrip("??•-* ").strip()
+                    if cleaned:
+                        improvements.append(f"• {cleaned}")
+        return improvements
+
+    @staticmethod
+    def merge_improvements(existing: list[str], new: list[str], limit: int = 20) -> list[str]:
+        """Deduplicate improvements while keeping order; cap length to avoid prompt bloat."""
+        merged: list[str] = []
+        seen = set()
+
+        def _norm(s: str) -> str:
+            s_clean = s.lstrip("•-*? ").strip().lower()
+            return " ".join(s_clean.split())
+
+        for item in (existing or []) + (new or []):
+            if not item:
+                continue
+            key = _norm(item)
+            if key in seen:
+                continue
+            seen.add(key)
+            merged.append(item.strip())
+            if len(merged) >= limit:
+                break
+        return merged
+
+    @staticmethod
+    def build_prompt(base_prompt: str, improvements: list[str]) -> str:
+        """Reconstruct prompt with a merged improvements section."""
+        section = ""
+        if improvements:
+            section = "\n\n--- STRATEGIC IMPROVEMENTS (from past games) ---\n" + "\n".join(improvements)
+        return base_prompt.rstrip() + section
     
     def get_current_prompt(self) -> str:
         """Get the current active prompt (base + last game feedback)."""

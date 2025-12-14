@@ -25,7 +25,7 @@ class GameLogger:
             self._f,
             fieldnames=[
                 "turn", "player", "model_name",
-                "move", "from_pos", "to_pos", "piece_type",
+                "move", "from_pos", "to_pos", "piece_type", "outcome",
             ],
             quoting=csv.QUOTE_MINIMAL,
             escapechar="\\"
@@ -41,6 +41,7 @@ class GameLogger:
         src: str = "",
         dst: str = "",
         piece_type: str = "",
+        outcome: str = "",
     ):
         self._writer.writerow({
             "turn": turn,
@@ -50,6 +51,7 @@ class GameLogger:
             "from_pos": src,
             "to_pos": dst,
             "piece_type": piece_type,
+            "outcome": outcome,
         })
         self._f.flush()
     

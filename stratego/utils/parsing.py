@@ -2,28 +2,9 @@ import re
 from typing import Any, List, Sequence
 
 MOVE_RE = re.compile(r"\[[A-J]\d\s+[A-J]\d\]")
-BOARD_HEADER_RE = re.compile(r"^0(\s+\d+)+$")
+# Allow leading spaces so 6x6 duel headers like "     0   1   2   3   4   5" are captured
+BOARD_HEADER_RE = re.compile(r"^\s*0(\s+\d+)+$")
 FORBID_LINE_RE = re.compile(r"^FORBIDDEN.*:$", re.IGNORECASE)
-
-# def extract_legal_moves(observation: str) -> List[str]:
-#     legal: List[str] = []
-#     for line in observation.splitlines():
-#         if line.strip().startswith("Available Moves:"):
-#             legal = MOVE_RE.findall(line)
-#     return [m.strip("[]").strip() for m in legal]  # <- normalize here
-
-# def extract_forbidden(observation: str) -> List[str]:
-#     forb: List[str] = []
-#     lines = observation.splitlines()
-#     for i, line in enumerate(lines):
-#         if FORBID_LINE_RE.match(line.strip()):
-#             j = i + 1
-#             while j < len(lines) and "[" in lines[j]:
-#                 forb.extend(MOVE_RE.findall(lines[j]))
-#                 j += 1
-#             break
-#     return [m.strip("[]").strip() for m in forb]  # <- normalize here
-
 
 def _obs_to_str(observation: Any) -> str:
 
@@ -67,13 +48,22 @@ def extract_board_block_lines(observation: str, size: int = 10) -> List[str]:
     text = _obs_to_str(observation)
     lines = text.splitlines()
     header_idx = None
+    detected_size = size
+
     for i in range(len(lines) - 1, -1, -1):
         if BOARD_HEADER_RE.match(lines[i].strip()):
             header_idx = i
+            # Auto-detect board size from header numbers (e.g., "0 1 2 3 4 5" -> size 6)
+            try:
+                nums = [int(n) for n in lines[i].split() if n.isdigit()]
+                if nums:
+                    detected_size = max(nums) + 1
+            except Exception:
+                pass
             break
-    if header_idx is None or header_idx + size >= len(lines):
+    if header_idx is None or header_idx + detected_size >= len(lines):
         return []
-    return lines[header_idx: header_idx + size + 1]
+    return lines[header_idx: header_idx + detected_size + 1]
 
 def slice_board_and_moves(observation: Any, size: int = 10) -> str:
     text = _obs_to_str(observation)
