@@ -73,29 +73,58 @@ class StrategoCustomEnv(ta.Env):
         self._observe_current_state(player_id=0)
 
     def step(self, action: str) -> Tuple[bool, ta.Info]:
-        """Execute a player's action with strict turn switching logic."""
+        """
+        Execute a player's action with strict turn switching logic.
+
+        IMPORTANT:
+        - Invalid moves TERMINATE the game
+        - Invalid moves DO NOT declare a winner
+        - Termination reason is stored explicitly for debugging/benchmarking
+        """
         player_id = self.state.current_player_id
         self.turn_count += 1
 
-        # --- 0. Pre-check: No Legal Moves ---
+        # ------------------------------------------------------------------
+        # 0. Pre-check: current player has no legal moves
+        # ------------------------------------------------------------------
         if self.state.game_state.get(f"available_moves_p{player_id}", 1) == 0:
             if self._has_movable_pieces(1 - player_id):
-                self.state.set_winner(player_id=(1 - player_id), reason="Opponent has no legal moves.")
+                self.state.set_winner(
+                    player_id=(1 - player_id),
+                    reason="Opponent has no legal moves."
+                )
             else:
-                self.state.set_winner(player_id=-1, reason="Stalemate (No moves for either player).")
+                self.state.set_winner(
+                    player_id=-1,
+                    reason="Stalemate (No moves for either player)."
+                )
             return self.state.step()
 
+        # Log raw action
         self.state.add_observation(
-            from_id=player_id, to_id=player_id, 
-            message=action, observation_type=ta.ObservationType.PLAYER_ACTION
+            from_id=player_id,
+            to_id=player_id,
+            message=action,
+            observation_type=ta.ObservationType.PLAYER_ACTION
         )
 
-        # --- 1. Parse & Validate ---
-        action_search_pattern = re.compile(r"\[([A-J])([0-9]) ([A-J])([0-9])\]", re.IGNORECASE)
+        # ------------------------------------------------------------------
+        # 1. Parse & Validate move format
+        # ------------------------------------------------------------------
+        action_search_pattern = re.compile(
+            r"\[([A-J])([0-9]) ([A-J])([0-9])\]",
+            re.IGNORECASE
+        )
         match = action_search_pattern.search(action)
 
         if match is None:
-            self.state.set_invalid_move(reason=f"Invalid format: {action}")
+            # [ADDED] Explicit invalid termination metadata
+            self.state.game_state["termination"] = "invalid"
+            self.state.game_state["invalid_reason"] = f"Invalid format: {action}"
+
+            self.state.set_invalid_move(
+                reason=f"Invalid format: {action}"
+            )
             return self.state.step()
 
         src_row_char, src_col_str, dst_row_char, dst_col_str = match.groups()
@@ -103,39 +132,57 @@ class StrategoCustomEnv(ta.Env):
         src_col = int(src_col_str)
         dest_row = ord(dst_row_char.upper()) - 65
         dest_col = int(dst_col_str)
-        
+
+        # ------------------------------------------------------------------
+        # 1.b Semantic validation (rules, ownership, movement, etc.)
+        # ------------------------------------------------------------------
         if not self._validate_move(player_id, src_row, src_col, dest_row, dest_col):
-            try:
-                self.state.game_info[player_id]["invalid_move"] = True
-            except Exception:
-                pass
-            self.state.set_winner(player_id=(1 - player_id), reason="Illegal move.")
-            return self.state.step()
-        
-        if self._check_repetition(player_id, src_row, src_col, dest_row, dest_col):
-            self.state.set_invalid_move(reason="Illegal move: Two-Squares Rule violation.")
+            # [ADDED] Mark termination as invalid instead of declaring a winner
+            self.state.game_state["termination"] = "invalid"
+            self.state.game_state["invalid_reason"] = "Illegal move"
+
+            self.state.set_invalid_move(reason="Illegal move")
             return self.state.step()
 
-        # --- 2. Execute Move (Board Update) ---
+        # ------------------------------------------------------------------
+        # 1.c Two-squares repetition rule
+        # ------------------------------------------------------------------
+        if self._check_repetition(player_id, src_row, src_col, dest_row, dest_col):
+            # [ADDED] Explicit invalid termination (repetition)
+            self.state.game_state["termination"] = "invalid"
+            self.state.game_state["invalid_reason"] = "Two-squares repetition rule violation"
+
+            self.state.set_invalid_move(
+                reason="Illegal move: Two-Squares Rule violation."
+            )
+            return self.state.step()
+
+        # ------------------------------------------------------------------
+        # 2. Execute Move (Board Update / Battle Resolution)
+        # ------------------------------------------------------------------
         attacking_piece = self.board[src_row][src_col]
         target_piece = self.board[dest_row][dest_col]
 
+        # Reset repetition tracking on capture
         if target_piece is not None:
-             self.repetition_count[player_id] = 0
-             self.last_move[player_id] = None
+            self.repetition_count[player_id] = 0
+            self.last_move[player_id] = None
         else:
-             self.last_move[player_id] = (src_row, src_col, dest_row, dest_col)
+            self.last_move[player_id] = (
+                src_row, src_col, dest_row, dest_col
+            )
 
         if target_piece is None:
-            # Move to empty
+            # Normal move to empty square
             self.board[dest_row][dest_col] = attacking_piece
             self.board[src_row][src_col] = None
             self.player_pieces[player_id].remove((src_row, src_col))
             self.player_pieces[player_id].append((dest_row, dest_col))
-            
+
             src_str = f"{src_row_char.upper()}{src_col}"
             dst_str = f"{dst_row_char.upper()}{dest_col}"
-            self._send_action_descriptions(player_id, 
+            self._send_action_descriptions(
+                player_id,
                 f"You have moved your piece from {src_str} to {dst_str}.",
                 f"Player {player_id} has moved a piece from {src_str} to {dst_str}."
             )
@@ -143,26 +190,45 @@ class StrategoCustomEnv(ta.Env):
             # Battle
             src_str = f"{src_row_char.upper()}{src_col}"
             dst_str = f"{dst_row_char.upper()}{dest_col}"
-            self._resolve_battle(player_id, attacking_piece, target_piece, 
-                                 (src_row, src_col), (dest_row, dest_col), 
-                                 src_str, dst_str)
+            self._resolve_battle(
+                player_id,
+                attacking_piece,
+                target_piece,
+                (src_row, src_col),
+                (dest_row, dest_col),
+                src_str,
+                dst_str
+            )
 
-        # --- 3. Check Win/Draw ---
+        # ------------------------------------------------------------------
+        # 3. Check Win / Draw conditions (NORMAL termination only)
+        # ------------------------------------------------------------------
         winner = self._check_winner()
         if winner is not None:
-            self.state.set_winner(player_id=winner, reason=f"Player {winner} wins! Opponent eliminated.")
-        elif self.turn_count > 200: 
-            self.state.set_winner(player_id=-1, reason="Turn limit reached (200).")
+            self.state.set_winner(
+                player_id=winner,
+                reason=f"Player {winner} wins! Opponent eliminated."
+            )
+        elif self.turn_count > 200:
+            self.state.set_winner(
+                player_id=-1,
+                reason="Turn limit reached (200)."
+            )
 
-        # --- 4. Finalize & Switch Turn ---
-        self.state.game_state["rendered_board"] = self._render_board(player_id=player_id, full_board=True)
-        
+        # ------------------------------------------------------------------
+        # 4. Finalize state & switch turn
+        # ------------------------------------------------------------------
+        self.state.game_state["rendered_board"] = self._render_board(
+            player_id=player_id,
+            full_board=True
+        )
+
         result = self.state.step()
-        
-        if not result[0]: 
+
+        if not result[0]:
             next_player_id = 1 - player_id
             self._observe_current_state(player_id=next_player_id)
-            
+
         return result
 
     # --------------------------------------------------------------------------
@@ -260,7 +326,7 @@ class StrategoCustomEnv(ta.Env):
                 # cell contains a piece dict
                 if full_board:
                     # show EVERYTHING
-                    ab = piece_abbreviations[cell['rank']]
+                    ab = abbrev[cell['rank']]
                     if cell['player'] == 0:
                         row_str += f" {ab.lower()} "
                     else:
@@ -299,7 +365,7 @@ class StrategoCustomEnv(ta.Env):
             self.board[dst_r][dst_c] = attacker
             self.player_pieces[player_id].append(dst)
             self.player_pieces[1 - player_id].remove(dst)
-            self.state.set_winner(player_id=player_id, reason=[f"Player {player_id} captured the Flag!"])
+            self.state.set_winner(player_id=player_id, reason=f"Player {player_id} captured the Flag!")
             return
 
         elif att_rank_val == def_rank_val:
@@ -394,7 +460,7 @@ class StrategoCustomEnv(ta.Env):
                 self.repetition_count[player_id] = 0
         return self.repetition_count[player_id] >= 3
 
-    def _generate_lakes(self) -> List[Tuple[int, int]]:
+    def _generate_lakes(self) -> list[Tuple[int, int]]:
         """
         Generate lake positions.
         [CHANGE] 4x4 and 5x5 boards have NO lakes.
