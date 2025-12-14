@@ -205,6 +205,7 @@ def cli():
                 else:
                     print(f"[TURN {turn}] No legal moves available for fallback; ending game loop.")
                     break
+                
             # --- NEW LOGGING FOR STRATEGY/MODEL DECISION ---
             print(f"  > AGENT DECISION: {model_name} -> {action}")
             print(f"  > Strategy/Model: Ollama Agent (T={current_agent.temperature}, Prompt='{args.prompt}')")
@@ -241,11 +242,7 @@ def cli():
                 "text": f"Turn {turn}: You played {action}"
             })
 
-            # Process move details for logging BEFORE step
-            
-            done, info = env.step(action=action)
-            
-            # Process move details for logging
+            # Process move details for logging BEFORE making the environment step
             move_details = process_move(
                 action=action,
                 board=env.env.board,
@@ -253,6 +250,7 @@ def cli():
                 player_id=player_id
             )
 
+            # Execute the action exactly once in the environment
             done, info = env.step(action=action)
             
             # Determine battle outcome by checking if target piece was there

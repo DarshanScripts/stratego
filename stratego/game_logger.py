@@ -28,11 +28,16 @@ class GameLogger:
         self.board_size = board_size
         self.path = os.path.join(games_dir, f"{self.game_id}.csv")
         self._f = open(self.path, "w", newline="", encoding="utf-8")
+        # Use full set of fields up-front so partial logs are readable during play
         self._writer = csv.DictWriter(
             self._f,
             fieldnames=[
                 "turn", "player", "model_name",
-                "move", "from_pos", "to_pos", "piece_type", "outcome",
+                "move", "from_pos", "to_pos", "piece_type",
+                "board_state", "available_moves", "move_direction",
+                "target_piece", "battle_outcome",
+                "prompt_name", "game_type", "board_size",
+                "outcome",
             ],
             quoting=csv.QUOTE_MINIMAL,
             escapechar="\\"
@@ -64,9 +69,25 @@ class GameLogger:
             "from_pos": src,
             "to_pos": dst,
             "piece_type": piece_type,
+            "board_state": board_state,
+            "available_moves": available_moves,
+            "move_direction": move_direction,
+            "target_piece": target_piece,
+            "battle_outcome": battle_outcome,
+            "prompt_name": self.prompt_name,
+            "game_type": self.game_type,
+            "board_size": self.board_size,
             "outcome": outcome,
-        })
-        self._f.flush()
+        }
+
+        # Store row in memory for post-game rewrite and write immediately to the file
+        self._rows.append(row)
+        try:
+            self._writer.writerow(row)
+            self._f.flush()
+        except Exception:
+            # If writing fails, keep going (file may be temporarily locked)
+            pass
     
     def finalize_game(self, winner: Optional[int], game_result: str = ""):
         """
@@ -91,7 +112,7 @@ class GameLogger:
                     "board_state", "available_moves", "move_direction",
                     "target_piece", "battle_outcome",
                     "prompt_name", "game_type", "board_size",
-                    "game_winner", "game_result",
+                    "outcome", "game_winner", "game_result",
                 ],
                 quoting=csv.QUOTE_MINIMAL,
                 escapechar="\\"
