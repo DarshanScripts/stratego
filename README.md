@@ -140,3 +140,6 @@ role="initial")
 * Second, please be a memeber of your own Huggingface organization and make a dataset repository to share with team members. Change the repository name of `./datasets/uploader.py` with your own repository name, which does uploading your log files to the Huggingface datasets.
 * Thirdly, if you are able to be a member of the organization, make your own Huggingface token to use in your local authentication. Make sure to create this token as `WRITE`, not `FINE-GRAINED` and not `READ`. Since this token would be shown only once, make sure to save the token in your local repository as text file.
 * Finally, login on your terminal with command, `hf auth login`. Enter your generated token and do not set token as credential. After all, you are able to upload your log data after gameplays automatically to your Huggingface repository.
+
+## Benchmark
+* After installing the package, you can use command `benchmark` to run the benchmark.
