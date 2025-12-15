@@ -41,12 +41,16 @@ def analyze_benchmark_csv(csv_path: str):
     repetitions = []
 
     for g in games:
-        winner = g["winner"]
+        winner_raw = g["winner"]
+        try:
+            winner = int(winner_raw)
+        except (TypeError, ValueError):
+            winner = -1
         reason = g["game_end_reason"]
 
-        if winner == "0":
+        if winner == 0:
             wins["p0"] += 1
-        elif winner == "1":
+        elif winner == 1:
             wins["p1"] += 1
         else:
             wins["draw"] += 1

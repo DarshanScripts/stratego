@@ -48,27 +48,44 @@ def run_game(agent0, agent1, size=6, seed=None):
             gi = state.game_info
 
             if gs.get("termination") == "invalid":
-                winner = None
-                reason_verbose = gs.get("invalid_reason", "Invalid move")
+                reason_verbose = f"Invalid move: {gs.get('invalid_reason', 'Invalid move')}"
 
             else:
-                winner = gi.get("winner")
                 raw = gi.get("reason", "")
-
-                if "Flag" in raw:
-                    flag_captured = True
-                    reason_verbose = raw
-                elif "No legal moves" in raw:
-                    reason_verbose = "Opponent had no legal moves"
-                elif "Stalemate" in raw:
-                    reason_verbose = "Stalemate"
-                elif "Turn limit" in raw:
-                    reason_verbose = "Turn limit reached"
+                # Normalize reason to string for downstream metrics/logs
+                if isinstance(raw, (list, tuple)):
+                    raw_reason = "; ".join(map(str, raw))
                 else:
-                    reason_verbose = "Game ended without explicit winner"
+                    raw_reason = str(raw)
+
+                raw_lower = raw_reason.lower()
+
+                if "flag" in raw_lower:
+                    flag_captured = True
+                    reason_verbose = raw_reason
+                elif "no legal moves" in raw_lower or "no more movable pieces" in raw_lower or "no moves" in raw_lower:
+                    reason_verbose = "Opponent had no legal moves"
+                elif "stalemate" in raw_lower:
+                    reason_verbose = "Stalemate"
+                elif "turn limit" in raw_lower:
+                    reason_verbose = "Turn limit reached"
+                elif "repetition" in raw_lower:
+                    reason_verbose = "Two-squares repetition rule violation"
+                else:
+                    reason_verbose = raw_reason or "Game ended without explicit winner"
+
+            # TextArena does not store a winner in game_info; derive from rewards
+            rewards = getattr(state, "rewards", None)
+            if rewards:
+                max_reward = max(rewards.values())
+                winners = [player for player, reward in rewards.items() if reward == max_reward]
+                if len(winners) == 1:
+                    winner = winners[0]
+                else:
+                    winner = -1
 
     return {
-        "winner": winner if winner is not None else "NONE",
+        "winner": winner if winner is not None else -1,
         "turns": turns,
         "invalid_moves_p0": invalid_moves[0],
         "invalid_moves_p1": invalid_moves[1],

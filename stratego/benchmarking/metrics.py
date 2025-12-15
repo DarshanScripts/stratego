@@ -28,17 +28,51 @@ def update_metrics(m, r):
     else:
         m["draws"] += 1
 
-    reason = r["game_end_reason"]
-    if "Invalid" in reason:
-        m["end_invalid"] += 1
-    elif "Flag" in reason:
+    reason = r["game_end_reason"] or ""
+    reason_lower = reason.lower()
+    winner = r.get("winner", -1)
+    flag_captured = r.get("flag_captured", False)
+
+    # If a flag was captured, trust that signal first
+    if flag_captured or "flag" in reason_lower:
         m["end_flag"] += 1
-    elif "no legal" in reason.lower():
-        m["end_no_moves"] += 1
-    elif "Turn limit" in reason:
-        m["end_turn_limit"] += 1
-    elif "Draw" in reason:
-        m["end_draw"] += 1    
+    else:
+        if winner == -1:
+            # Only count draws when the game result is actually a draw
+            if "invalid" in reason_lower:
+                m["end_invalid"] += 1
+            elif "flag" in reason_lower:
+                m["end_flag"] += 1
+            elif ("no legal" in reason_lower or
+                  "no more movable pieces" in reason_lower or
+                  "no moves" in reason_lower):
+                m["end_no_moves"] += 1
+            elif "turn limit" in reason_lower:
+                m["end_turn_limit"] += 1
+            elif "draw" in reason_lower or "repetition" in reason_lower or "stalemate" in reason_lower:
+                m["end_draw"] += 1
+            else:
+                m["end_draw"] += 1  # fallback for unknown draw reasons
+        else:
+            # Non-draw outcomes
+            if "invalid" in reason_lower:
+                m["end_invalid"] += 1
+            elif "repetition" in reason_lower:
+                m["end_no_moves"] += 1
+            elif "flag" in reason_lower:
+                m["end_flag"] += 1
+            elif ("no legal" in reason_lower or
+                  "no more movable pieces" in reason_lower or
+                  "no moves" in reason_lower):
+                m["end_no_moves"] += 1
+            elif "turn limit" in reason_lower:
+                m["end_turn_limit"] += 1
+            else:
+                # If we have a winner but no clear reason, assume win by flag if captured, else by no-moves.
+                if flag_captured:
+                    m["end_flag"] += 1
+                else:
+                    m["end_no_moves"] += 1
 
     m["turns"].append(r["turns"])
     m["invalid_p0"] += r["invalid_moves_p0"]

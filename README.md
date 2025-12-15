@@ -143,3 +143,5 @@ role="initial")
 
 ## Benchmark
 * After installing the package, you can use command `benchmark` to run the benchmark.
+* You can set `--p0`, `--p1`, as playing LLM and `--size`, `--game` as size of the board and number of games to play.
+* For example, `benchmark --p0 llama3.2:1b --p1 gemma3:1b --size 6 --game 4`
