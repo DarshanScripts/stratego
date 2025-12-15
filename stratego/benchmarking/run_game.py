@@ -1,7 +1,7 @@
 # stratego/benchmarking/run_game.py
 
 import textarena as ta
-from stratego.env.backup.edited_env.StrategoCustom.env import StrategoCustomEnv
+from stratego.env.stratego_env import StrategoEnv
 
 
 def get_last_board_observation(state, player_id):
@@ -14,7 +14,7 @@ def get_last_board_observation(state, player_id):
 
 
 def run_game(agent0, agent1, size=6, seed=None):
-    env = StrategoCustomEnv(size=size)
+    env = StrategoEnv(env_id = "Stratego-custom",size=size)
     env.reset(num_players=2, seed=seed)
 
     invalid_moves = {0: 0, 1: 0}
@@ -27,23 +27,25 @@ def run_game(agent0, agent1, size=6, seed=None):
     flag_captured = False
 
     while not done:
-        pid = env.state.current_player_id
+        state = env.get_state()
+        rep = env.repetition_count()
+        pid = state.current_player_id
         agent = agent0 if pid == 0 else agent1
 
-        obs = get_last_board_observation(env.state, pid)
+        obs = get_last_board_observation(state, pid)
         action = agent(obs) if callable(agent) else agent.act(obs)
 
         done, _ = env.step(action)
         turns += 1
 
-        if env.state.game_info.get(pid, {}).get("invalid_move"):
+        if state.game_info.get(pid, {}).get("invalid_move"):
             invalid_moves[pid] += 1
 
-        repetitions += env.repetition_count.get(pid, 0)
+        repetitions += rep.get(pid, 0)
 
         if done:
-            gs = env.state.game_state
-            gi = env.state.game_info
+            gs = state.game_state
+            gi = state.game_info
 
             if gs.get("termination") == "invalid":
                 winner = None

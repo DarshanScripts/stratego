@@ -1,8 +1,5 @@
 # stratego/benchmarking/main_benchmark.py
 
-# ✅ BOOTSTRAP FIRST (MANDATORY)
-from stratego.benchmarking.textarena_bootstrap import *
-
 from stratego.models.ollama_model import OllamaAgent
 from .run_benchmark import run_benchmark
 
@@ -27,5 +24,5 @@ def benchmark():
         print(f"{k:25s}: {v}")
 
 
-if __name__ == "__main__":
+def main():
     benchmark()
