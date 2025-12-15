@@ -1,6 +1,6 @@
 import random
 import re
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple, List
 import textarena as ta
 
 # ==============================================================================
@@ -142,6 +142,11 @@ class StrategoCustomEnv(ta.Env):
             self.state.game_state["invalid_reason"] = "Illegal move"
 
             self.state.set_invalid_move(reason="Illegal move")
+            try:
+                self.state.game_info[player_id]["invalid_move"] = True
+            except Exception:
+                pass
+            self.state.set_winner(player_id=(1 - player_id), reason="Illegal move.")
             return self.state.step()
 
         # ------------------------------------------------------------------

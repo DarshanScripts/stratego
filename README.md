@@ -71,10 +71,6 @@
 * You can kill the server with `kill $(cat /scratch/{user}/ollama_serve.pid)` or `pkill -f "/scratch/{user}/ollama_bin/ollama serve"`.
 * When you have ConnectError: [WinError 10061], try `$env:OLLAMA_HOST = "http://127.0.0.1:{your_host}"` to set Ollama host as your address as well.
 
-## Regarding Using Different Large Language Models
-
-- Write down your insights...
-
 ## Dataset and prompt optimization
 
 #In the main.py file:
@@ -138,3 +134,9 @@ role="initial")
 - Downsizing the board:
   -In order to do that, firstly we introduce the argument in the `cli()` function:
   ` p.add_argument("--size", type=int, default=10, help="Board size NxN")`
+
+## Regarding using Huggingface Datasets
+* First of all install Huggingface in your .venv or your local library with command: `pip install huggingface huggingface_hub datasets`. This allows you to use Huggingface functionalities in your circumstance as well as Huggingface client and its datasets.
+* Second, please be a memeber of your own Huggingface organization and make a dataset repository to share with team members. Change the repository name of `./datasets/uploader.py` with your own repository name, which does uploading your log files to the Huggingface datasets.
+* Thirdly, if you are able to be a member of the organization, make your own Huggingface token to use in your local authentication. Make sure to create this token as `WRITE`, not `FINE-GRAINED` and not `READ`. Since this token would be shown only once, make sure to save the token in your local repository as text file.
+* Finally, login on your terminal with command, `hf auth login`. Enter your generated token and do not set token as credential. After all, you are able to upload your log data after gameplays automatically to your Huggingface repository.
