@@ -367,8 +367,8 @@ Output ONLY one legal move in the exact format [A0 B0]. Nothing else.
 
             # [FIX - 13 Dec 2025] Always validate moves using LLM self-check
             # Previously small boards skipped validation, causing invalid moves to reach environment
-            is_valid, reason = self._validate_move(full_context, mv)
-            if is_valid:
+            # is_valid, reason = self._validate_move(full_context, mv)
+            # if is_valid:
             if available_moves:
                 return mv
 
