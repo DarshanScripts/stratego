@@ -132,7 +132,7 @@ Output ONLY one legal move in the exact format [A0 B0]. Nothing else.
                 
         self.initial_prompt = self.system_prompt
         # Setup Ollama client
-        base_url = host or os.getenv("OLLAMA_HOST", "http://localhost:11434")
+        base_url = host or os.getenv("OLLAMA_HOST", "http://localhost:11435")
         model_kwargs = {
             "temperature": kwargs.pop("temperature", 0.1),
             "top_p": kwargs.pop("top_p", 0.9),
@@ -177,7 +177,7 @@ Output ONLY one legal move in the exact format [A0 B0]. Nothing else.
         """Send request directly to Ollama REST API (fixes Windows LangChain bug)."""
         try:
             response = requests.post(
-                "http://localhost:11434/api/generate",
+                "http://localhost:11435/api/generate",
                 json={
                     "model": self.model_name,
                     "prompt": prompt,
