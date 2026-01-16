@@ -2,6 +2,9 @@ from __future__ import annotations
 import shutil
 from pathlib import Path
 import textarena
+import textarena.envs.registration as _reg
+from textarena.wrappers import LLMObservationWrapper, ActionFormattingWrapper, GameMessagesAndCurrentBoardObservationWrapper, GameMessagesObservationWrapper, GameBoardObservationWrapper, ClipCharactersActionWrapper, SettlersOfCatanObservationWrapper
+
 
 def get_textarena_env_dir() -> Path:
     ta_root = Path(textarena.__file__).resolve().parent
@@ -12,7 +15,7 @@ def get_textarena_env_dir() -> Path:
 def install_strategos():
     stratego_directory = Path(__file__).resolve().parent
     src_dir = stratego_directory / "env" / "backup" / "edited_env"
-    reg = src_dir / "__init__.txt"
+    # reg = src_dir / "__init__.txt"
     
     for path in ["Stratego", "StrategoDuel", "StrategoCustom"]:
         env = src_dir / path / "env.py"
@@ -34,18 +37,26 @@ def install_strategos():
     if not ta_init.exists():
         raise FileNotFoundError("Init file of textarena env is not found!")
     
-    registration_code = reg.read_text(encoding="utf-8")
-    
-    marker = "#--- Initializing StrategoDuel ---#"
-    if marker in ta_init.read_text(encoding="utf-8"):
-        print("Stratego duel arleady exists in init file")
-        return
-    
-    with ta_init.open("a", encoding="utf-8") as f:
-        f.write("\n\n" + marker + "\n")
-        f.write(registration_code + "\n")
-    
-    print("Stratego Games are newly registered!")
-
+    marker = "# --- Stratego Auto-Registration --- #"
+    registration_code = (
+        'register_with_versions(id="Stratego-duel", entry_point="textarena.envs.StrategoDuel.env:StrategoDuelEnv", '
+        'wrappers={"default": DEFAULT_WRAPPERS, "-train": BOARDGAME_WRAPPERS})\n'
+        'register_with_versions(id="Stratego-custom", entry_point="textarena.envs.StrategoCustom.env:StrategoCustomEnv", '
+        'wrappers={"default": DEFAULT_WRAPPERS, "-train": BOARDGAME_WRAPPERS})\n'
+    )
+    ta_init_text = ta_init.read_text(encoding="utf-8")
+    if marker not in ta_init_text:
+        with ta_init.open("a", encoding="utf-8") as f:
+            f.write("\n\n" + marker + "\n")
+            f.write(registration_code)
+    # DEFAULT_WRAPPERS = [LLMObservationWrapper, ActionFormattingWrapper]
+    # BOARDGAME_WRAPPERS = [GameMessagesAndCurrentBoardObservationWrapper, ActionFormattingWrapper]
+    # try:
+    #     _reg.register_with_versions(id="Stratego-duel", entry_point="textarena.envs.StrategoDuel.env:StrategoDuelEnv", wrappers={"default": DEFAULT_WRAPPERS, "-train": BOARDGAME_WRAPPERS})
+    #     _reg.register_with_versions(id="Stratego-custom", entry_point="textarena.envs.StrategoCustom.env:StrategoCustomEnv", wrappers={"default": DEFAULT_WRAPPERS, "-train": BOARDGAME_WRAPPERS})
+    #     print("Stratego Games are newly registered!")
+    # except ValueError:
+    #     print("Stratego Games are already registered!")
+    #     pass
 def main():
     install_strategos()

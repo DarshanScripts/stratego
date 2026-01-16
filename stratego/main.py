@@ -9,6 +9,7 @@ from stratego.prompts import get_prompt_pack
 from stratego.utils.parsing import extract_board_block_lines, extract_legal_moves, extract_forbidden
 from stratego.utils.game_move_tracker import GameMoveTracker as MoveTrackerClass
 from stratego.utils.move_processor import process_move
+from stratego.utils.opponent_inference import OpponentInference
 from stratego.game_logger import GameLogger
 from stratego.game_analyzer import analyze_and_update_prompt
 from stratego.datasets import auto_push_after_game
@@ -55,6 +56,7 @@ def cli():
     DUEL_ENV = "Stratego-duel"
     CUSTOM_ENV = "Stratego-custom"
     tracker = MoveTrackerClass()
+    inferences = {0: OpponentInference(), 1: OpponentInference()}
     p = argparse.ArgumentParser()
     p.add_argument("--p0", default="ollama:deepseek-r1:32b")
     p.add_argument("--p1", default="ollama:gemma3:1b")
@@ -183,8 +185,14 @@ def cli():
                  observation += "\n[CRITICAL]: STOP MOVING BACK AND FORTH. Pick a piece and move it FORWARD now."
             # ------------------------------------------
 
-            # [FIX - 13 Dec 2025] Append board size hint before history to improve context
-            observation = observation + board_size_hint + history_str
+            observation = observation + history_str
+            observation += "\n" + inferences[player_id].to_prompt()
+            observation += (
+                "\n[ATTACK POLICY]\n"
+                "- Prefer probing attacks against enemy pieces that have moved (not Bomb/Flag).\n"
+                "- Use low-rank pieces (Scout/Miner/Sergeant) to reveal or trade safely.\n"
+                "- Avoid endless shuffling; if safe options exist, attack to gain information.\n"
+            )
             # print(tracker.to_prompt_string(player_id))
             lines = history_str.strip().splitlines()
             if len(lines) <= 1:
@@ -308,6 +316,47 @@ def cli():
                     
             event = info.get("event") if isinstance(info, dict) else None
             extra = info.get("detail") if isinstance(info, dict) else None
+
+            # --- Update enemy inference for both players ---
+            def update_inference_for_player(viewer_id: int, mover_id: int):
+                opponent_id = 1 - viewer_id
+                battle_occurred = bool(move_details.target_piece)
+                if mover_id == opponent_id:
+                    # Opponent moved: mark as mobile (not Bomb/Flag)
+                    inferences[viewer_id].note_enemy_moved(
+                        src_pos=move_details.src_pos,
+                        dst_pos=move_details.dst_pos,
+                    )
+                    if battle_occurred:
+                        if battle_outcome == "won":
+                            # Opponent won; their piece remains and rank is revealed
+                            if move_details.piece_type:
+                                inferences[viewer_id].note_enemy_revealed(
+                                    pos=move_details.dst_pos,
+                                    rank=move_details.piece_type,
+                                )
+                        else:
+                            # Opponent lost or draw; their piece is removed
+                            inferences[viewer_id].note_enemy_removed(move_details.dst_pos)
+                            if battle_outcome == "lost" and move_details.piece_type:
+                                inferences[viewer_id].record_captured(move_details.piece_type)
+                else:
+                    # Viewer moved; only update if a battle revealed enemy rank
+                    if battle_occurred and move_details.target_piece:
+                        if battle_outcome == "lost":
+                            # Enemy survived; rank revealed at dst
+                            inferences[viewer_id].note_enemy_revealed(
+                                pos=move_details.dst_pos,
+                                rank=move_details.target_piece,
+                            )
+                        else:
+                            # Enemy removed
+                            inferences[viewer_id].note_enemy_removed(move_details.dst_pos)
+                            if battle_outcome == "won":
+                                inferences[viewer_id].record_captured(move_details.target_piece)
+
+            update_inference_for_player(0, player_id)
+            update_inference_for_player(1, player_id)
             
             if outcome != "invalid":
                 # Record this move in history

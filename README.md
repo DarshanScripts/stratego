@@ -57,23 +57,27 @@
     * `mkdir -p /scratch/{user}/ollama_model` to make a directory to store Ollama model files.
     * `mkdir -p /scratch/{user}/ollama_tmp` to make a directory to store tmp files.
     * `cd /scratch/{user}/ollama_bin`
+    <!-- Outdated since ollama is up to version 0.14.0 updated
     * `curl -L https://ollama.com/download/ollama-linux-amd64.tgz -o ollama.tgz`
-    * `tar -xzf ollama.tgz` to download Ollama client from its website in ollama_bin and launch.
-    * `ln -sf /scratch/{user}/ollama_bin/bin/ollama /scratch/{user}/ollama_bin/ollama` to make a binary file of Ollama, which you can launch with `ollama` command. 
-    * `export OLLAMA_MODELS=/scratch/{user}/ollama_model`
-    * `export OLLAMA_TMPDIR=/scratch/{user}/ollama_tmp`
-    * `export OLLAMA_HOST=0.0.0.0:{your_host}`
-    * `export PATH="/scratch/{user}/ollama_bin:$PATH"` to set paths for running Ollama.
-    * `/scratch/{user}/ollama_bin/ollama serve` to start the server.
+    * `tar -xzf ollama.tgz` to download Ollama client from its website in ollama_bin and launch. -->
+    * `curl -fL -o ollama-linux-amd64.tar.zst https://github.com/ollama/ollama/releases/download/v0.14.0/ollama-linux-amd64.tar.zst` to download ollama client file from ollama github
+    * `ls -lh ollama-linux-amd64.tar.zst` to check, if the download is successful. It should be about 1.7 GB.
+    * `tar --use-compress-program=unzstd -xvf ollama-linux-amd64.tar.zst` to unzip the file. After all you can find ./bin/ollama. This is binary file which can launch ollama command.
+    <!-- Outdated since ollama is up to version 0.14.0 updated 
+    * `ln -sf /scratch/{user}/ollama_bin/bin/ollama /scratch/{user}/ollama_bin/ollama` to make a binary file of Ollama, which you can launch with `ollama` command.  -->
+    * `export OLLAMA_MODELS=/scratch/{user}/ollama_model` for bash, `setenv OLLAMA_MODELS /scratch/{user}/ollama_model` for tcsh or csh.
+    * `export OLLAMA_TMPDIR=/scratch/{user}/ollama_tmp` or `setenv OLLAMA_TMPDIR /scratch/{user}/ollama_tmp`
+    * `export OLLAMA_HOST=0.0.0.0:{your_host}` or `setenv OLLAMA_HOST 0.0.0.0:{your_host}`
+    * `export PATH="/scratch/{user}/ollama_bin:$PATH"` or `setenv PATH "/scratch/{user}/ollama_bin:$PATH"` to set paths for running Ollama.
+    * `tmux new -s {session_name}` to continuing server after disconnecting your ssh session. With this command you can open a tmux terminal.
+    * `/scratch/{user}/ollama_bin/ollama serve` to start the server. If you run the command inside tmux terminal, it would be better for maintaining the server.
+    * Press `ctrl+b` then press `d` to exit from tmux. The server runs itself, after you leave the terminal. Try to check if your ollama server is open or not, `ss -ltnp | grep {your_host}` and 
+    `tmux ls` to load all running tmux terminals. You can easily go to the tmux terminal with `tmux attach -t {session_name}`.
 * Once you are connected to Ollama running server, then you can with this command `curl -s http://127.0.0.1:{your_host}/api/tags` or `curl -s http://127.0.0.1:{your_host}/api/tags | jq -r '.models[].name'` to check what kind of LLMs are available now in the server.
 * `curl -X POST http://127.0.0.1:{your_host}/api/pull -H 'Content-Type: application/json' -d '{"name":"{model_name}"}'` Use this command to request the server to download such LLM which are supported by Ollama.
 * Those curl commands does not fully function or need extra words if you are going to run those in Powershell, so just open another terminal with Linux(you can use Ubuntu as well), connect to ssh -L, and execute those curl commands, for checking and pulling LLMs.
 * You can kill the server with `kill $(cat /scratch/{user}/ollama_serve.pid)` or `pkill -f "/scratch/{user}/ollama_bin/ollama serve"`.
 * When you have ConnectError: [WinError 10061], try `$env:OLLAMA_HOST = "http://127.0.0.1:{your_host}"` to set Ollama host as your address as well.
-
-## Regarding Using Different Large Language Models
-
-- Write down your insights...
 
 ## Dataset and prompt optimization
 
@@ -138,3 +142,14 @@ role="initial")
 - Downsizing the board:
   -In order to do that, firstly we introduce the argument in the `cli()` function:
   ` p.add_argument("--size", type=int, default=10, help="Board size NxN")`
+
+## Regarding using Huggingface Datasets
+* First of all install Huggingface in your .venv or your local library with command: `pip install huggingface huggingface_hub datasets`. This allows you to use Huggingface functionalities in your circumstance as well as Huggingface client and its datasets.
+* Second, please be a memeber of your own Huggingface organization and make a dataset repository to share with team members. Change the repository name of `./datasets/uploader.py` with your own repository name, which does uploading your log files to the Huggingface datasets.
+* Thirdly, if you are able to be a member of the organization, make your own Huggingface token to use in your local authentication. Make sure to create this token as `WRITE`, not `FINE-GRAINED` and not `READ`. Since this token would be shown only once, make sure to save the token in your local repository as text file.
+* Finally, login on your terminal with command, `hf auth login`. Enter your generated token and do not set token as credential. After all, you are able to upload your log data after gameplays automatically to your Huggingface repository.
+
+## Benchmark
+* After installing the package, you can use command `benchmark` to run the benchmark.
+* You can set `--p0`, `--p1`, as playing LLM and `--size`, `--game` as size of the board and number of games to play.
+* For example, `benchmark --p0 llama3.2:1b --p1 gemma3:1b --size 6 --game 4`
