@@ -68,15 +68,15 @@
     * `export OLLAMA_MODELS=/scratch/{user}/ollama_model` for bash, `setenv OLLAMA_MODELS /scratch/{user}/ollama_model` for tcsh or csh.
     * `export OLLAMA_TMPDIR=/scratch/{user}/ollama_tmp` or `setenv OLLAMA_TMPDIR /scratch/{user}/ollama_tmp`
     * `export OLLAMA_HOST=0.0.0.0:{your_host}` or `setenv OLLAMA_HOST 0.0.0.0:{your_host}`
-    * `export PATH="/scratch/{user}/ollama_bin:$PATH"` or `setenv PATH "/scratch/{user}/ollama_bin:$PATH"` to set paths for running Ollama.
+    * `export PATH="/scratch/{user}/ollama_bin/bin:$PATH"` or `setenv PATH "/scratch/{user}/ollama_bin/bin:$PATH"` to set paths for running Ollama.
     * `tmux new -s {session_name}` to continuing server after disconnecting your ssh session. With this command you can open a tmux terminal.
-    * `/scratch/{user}/ollama_bin/ollama serve` to start the server. If you run the command inside tmux terminal, it would be better for maintaining the server.
+    * `/scratch/{user}/ollama_bin/bin/ollama serve` to start the server. If you run the command inside tmux terminal, it would be better for maintaining the server.
     * Press `ctrl+b` then press `d` to exit from tmux. The server runs itself, after you leave the terminal. Try to check if your ollama server is open or not, `ss -ltnp | grep {your_host}` and 
     `tmux ls` to load all running tmux terminals. You can easily go to the tmux terminal with `tmux attach -t {session_name}`.
 * Once you are connected to Ollama running server, then you can with this command `curl -s http://127.0.0.1:{your_host}/api/tags` or `curl -s http://127.0.0.1:{your_host}/api/tags | jq -r '.models[].name'` to check what kind of LLMs are available now in the server.
 * `curl -X POST http://127.0.0.1:{your_host}/api/pull -H 'Content-Type: application/json' -d '{"name":"{model_name}"}'` Use this command to request the server to download such LLM which are supported by Ollama.
 * Those curl commands does not fully function or need extra words if you are going to run those in Powershell, so just open another terminal with Linux(you can use Ubuntu as well), connect to ssh -L, and execute those curl commands, for checking and pulling LLMs.
-* You can kill the server with `kill $(cat /scratch/{user}/ollama_serve.pid)` or `pkill -f "/scratch/{user}/ollama_bin/ollama serve"`.
+* You can kill the server with `kill $(cat /scratch/{user}/ollama_serve.pid)` or `pkill -f "/scratch/{user}/ollama_bin/bin/ollama serve"`.
 * When you have ConnectError: [WinError 10061], try `$env:OLLAMA_HOST = "http://127.0.0.1:{your_host}"` to set Ollama host as your address as well.
 
 ## Dataset and prompt optimization
