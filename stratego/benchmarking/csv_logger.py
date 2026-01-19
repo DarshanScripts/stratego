@@ -32,7 +32,8 @@ def create_benchmark_csv(batch_size: int):
         "invalid_moves_p1",
         "repetitions",
         "flag_captured",
-        "game_end_reason"
+        "game_end_reason",
+        "winner_model"
     ])
 
     return f, writer, path

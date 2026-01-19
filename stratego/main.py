@@ -10,6 +10,17 @@ from stratego.utils.parsing import extract_board_block_lines, extract_legal_move
 from stratego.utils.game_move_tracker import GameMoveTracker as MoveTrackerClass
 from stratego.utils.move_processor import process_move
 from stratego.utils.opponent_inference import OpponentInference
+from stratego.utils.attack_policy import (
+    choose_attack_move,
+    choose_chase_move,
+    list_attack_moves,
+    reverse_move,
+)
+from stratego.utils.board_stats import (
+    count_movable_by_player,
+    count_pieces_by_player,
+    positions_for_enemy,
+)
 from stratego.game_logger import GameLogger
 from stratego.game_analyzer import analyze_and_update_prompt
 from stratego.datasets import auto_push_after_game
@@ -57,6 +68,7 @@ def cli():
     CUSTOM_ENV = "Stratego-custom"
     tracker = MoveTrackerClass()
     inferences = {0: OpponentInference(), 1: OpponentInference()}
+    gui = None
     p = argparse.ArgumentParser()
     p.add_argument("--p0", default="ollama:deepseek-r1:32b")
     p.add_argument("--p1", default="ollama:gemma3:1b")
@@ -73,9 +85,13 @@ def cli():
     p.add_argument("--log-dir", default="logs", help="Directory for per-game CSV logs")
     p.add_argument("--game-id", default=None, help="Optional custom game id in CSV filename")
     p.add_argument("--size", type=int, default=10, help="Board size NxN")
-    p.add_argument("--max-turns", type=int, default=None, help="Maximum turns before stopping (for testing). E.g., --max-turns 10")
+    p.add_argument("--max_turns", type=int, default=200, help="Maximum turns before stopping. Default is 200.")
+    p.add_argument("--gui", action="store_true", help="Show a live GUI board window")
 
     args = p.parse_args()
+    if args.gui:
+        from stratego.utils.board_gui import BoardGUI
+        gui = BoardGUI(title="Stratego")
 
     #(13 Nov 2025) --- INTERACTIVE ENVIRONMENT SELECTION ---
     if args.env_id == DEFAULT_ENV:
@@ -125,6 +141,7 @@ def cli():
         env = StrategoEnv()
         game_type = "standard"
     env.reset(num_players=2)
+    initial_counts = count_pieces_by_player(env.env.board)
     
     # Track game start time
     game_start_time = time.time()
@@ -156,6 +173,15 @@ def cli():
             current_agent = agents[player_id]
             player_display = f"Player {player_id+1}"
             model_name = current_agent.model_name
+            movable_counts = count_movable_by_player(env.env.board)
+
+            for viewer_id in (0, 1):
+                enemy_positions = positions_for_enemy(env.env.board, viewer_id)
+                inferences[viewer_id].update_enemy_positions(enemy_positions)
+                inferences[viewer_id].set_enemy_remaining(
+                    total=len(enemy_positions),
+                    movable=movable_counts.get(1 - viewer_id, 0),
+                )
             
             # --- NEW LOGGING FOR TURN, PLAYER, AND MODEL ---
             print(f"\n>>>> TURN {turn}: {player_display} ({model_name}) is moving...")
@@ -164,6 +190,8 @@ def cli():
                 print_board(observation)
             else:
                 print_board(observation, args.size)
+            if gui:
+                gui.update_from_observation(observation, args.size)
             # Pass recent move history to agent
             current_agent.set_move_history(move_history[player_id][-10:])
             history_str = tracker.to_prompt_string(player_id)
@@ -184,6 +212,9 @@ def cli():
                 "- Prefer probing attacks against enemy pieces that have moved (not Bomb/Flag).\n"
                 "- Use low-rank pieces (Scout/Miner/Sergeant) to reveal or trade safely.\n"
                 "- Avoid endless shuffling; if safe options exist, attack to gain information.\n"
+                "- If the enemy has only a few pieces left, prioritize attacking.\n"
+                "- Probe immobile enemy pieces with low ranks to test for Bombs.\n"
+                "- If a Bomb is confirmed and a Miner can attack it, do so.\n"
             )
             # print(tracker.to_prompt_string(player_id))
             lines = history_str.strip().splitlines()
@@ -214,6 +245,54 @@ def cli():
                 else:
                     print(f"[TURN {turn}] No legal moves available for fallback; ending game loop.")
                     break
+
+            legal = extract_legal_moves(observation)
+            forbidden = set(extract_forbidden(observation))
+            legal_filtered = [m for m in legal if m not in forbidden] or legal
+            attack_moves = list_attack_moves(legal_filtered, env.env.board, player_id)
+            immobile_positions = inferences[player_id].get_immobile_positions()
+            bomb_positions = inferences[player_id].get_bomb_positions()
+            enemy_positions = positions_for_enemy(env.env.board, player_id)
+            enemy_total = len(enemy_positions)
+            threshold = max(2, int(initial_counts.get(1 - player_id, 0) * 0.25))
+            aggressive = enemy_total <= threshold or movable_counts.get(1 - player_id, 0) <= threshold
+            last_move = move_history[player_id][-1]["move"] if move_history[player_id] else ""
+            avoid_move = reverse_move(last_move) if last_move else None
+
+            if attack_moves:
+                miner_bomb_moves = [
+                    mv for mv in attack_moves if mv[2] in bomb_positions and mv[3] == "Miner"
+                ]
+                if miner_bomb_moves:
+                    forced = choose_attack_move(miner_bomb_moves, prefer_miner_to_bomb=False)
+                    if forced and forced != action:
+                        action = forced
+                elif aggressive:
+                    forced = choose_attack_move(
+                        attack_moves,
+                        immobile_targets=immobile_positions,
+                        bomb_positions=bomb_positions,
+                        prefer_low_rank=True,
+                        prefer_miner_to_bomb=True,
+                    )
+                    if forced and forced != action:
+                        action = forced
+                elif aggressive:
+                    chase = choose_chase_move(
+                        legal_filtered,
+                        enemy_positions,
+                        avoid_move=avoid_move,
+                    )
+                    if chase and chase != action:
+                        action = chase
+            elif aggressive:
+                chase = choose_chase_move(
+                    legal_filtered,
+                    enemy_positions,
+                    avoid_move=avoid_move,
+                )
+                if chase and chase != action:
+                    action = chase
                 
             # --- NEW LOGGING FOR STRATEGY/MODEL DECISION ---
             print(f"  > AGENT DECISION: {model_name} -> {action}")
@@ -335,6 +414,11 @@ def cli():
                 else:
                     # Viewer moved; only update if a battle revealed enemy rank
                     if battle_occurred and move_details.target_piece:
+                        if move_details.target_piece == "Bomb":
+                            if battle_outcome == "lost":
+                                inferences[viewer_id].note_bomb_confirmed(move_details.dst_pos)
+                            else:
+                                inferences[viewer_id].note_bomb_removed(move_details.dst_pos)
                         if battle_outcome == "lost":
                             # Enemy survived; rank revealed at dst
                             inferences[viewer_id].note_enemy_revealed(

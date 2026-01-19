@@ -472,11 +472,6 @@ class StrategoEnv(ta.Env):
             reason = "Stalemate: Neither player has any valid moves remaining. The game is a draw."
             self.state.set_winner(player_id=-1, reason=reason) # -1 means draw
         
-        # 3. Check for Turn Limit (Draw) - This fixes Bug #2
-        elif self.turn_count > 1000: # You can adjust this number
-            reason = f"Game ended in a draw (turn limit of {self.turn_count} moves exceeded)."
-            self.state.set_winner(player_id=-1, reason=reason)
-
         ## update the rendered board
         self.state.game_state["rendered_board"] = self._render_board(player_id=player_id, full_board=True)
 

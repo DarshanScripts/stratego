@@ -7,6 +7,12 @@ from stratego.utils.game_move_tracker import GameMoveTracker as MoveTrackerClass
 from stratego.utils.move_processor import process_move
 from stratego.utils.opponent_inference import OpponentInference
 from stratego.utils.parsing import extract_legal_moves, extract_forbidden
+from stratego.utils.attack_policy import choose_attack_move, list_attack_moves, reverse_move
+from stratego.utils.board_stats import (
+    count_movable_by_player,
+    count_pieces_by_player,
+    positions_for_enemy,
+)
 
 
 def get_last_board_observation(state, player_id):
@@ -26,9 +32,16 @@ def get_last_prompt_observation(state, player_id):
     return ""
 
 
-def run_game(agent0, agent1, size=6, seed=None):
-    env = StrategoEnv(env_id = "Stratego-custom",size=size)
+def run_game(agent0, agent1, size=6, seed=None, start_player=None):
+    env = StrategoEnv(env_id="Stratego-custom", size=size)
     env.reset(num_players=2, seed=seed)
+    if start_player in (0, 1):
+        try:
+            env.env.state.current_player_id = start_player
+            if hasattr(env.env, "_observe_current_state"):
+                env.env._observe_current_state(player_id=start_player)
+        except Exception:
+            pass
 
     invalid_moves = {0: 0, 1: 0}
     repetitions = 0
@@ -36,6 +49,7 @@ def run_game(agent0, agent1, size=6, seed=None):
     tracker = MoveTrackerClass()
     inferences = {0: OpponentInference(), 1: OpponentInference()}
     move_history = {0: [], 1: []}
+    initial_counts = count_pieces_by_player(env.env.board)
 
     done = False
     winner = None
@@ -47,6 +61,15 @@ def run_game(agent0, agent1, size=6, seed=None):
         rep = env.repetition_count()
         pid = state.current_player_id
         agent = agent0 if pid == 0 else agent1
+        movable_counts = count_movable_by_player(env.env.board)
+
+        for viewer_id in (0, 1):
+            enemy_positions = positions_for_enemy(env.env.board, viewer_id)
+            inferences[viewer_id].update_enemy_positions(enemy_positions)
+            inferences[viewer_id].set_enemy_remaining(
+                total=len(enemy_positions),
+                movable=movable_counts.get(1 - viewer_id, 0),
+            )
 
         base_prompt = get_last_prompt_observation(state, pid)
         board_obs = get_last_board_observation(state, pid)
@@ -59,6 +82,9 @@ def run_game(agent0, agent1, size=6, seed=None):
             "- Prefer probing attacks against enemy pieces that have moved (not Bomb/Flag).\n"
             "- Use low-rank pieces (Scout/Miner/Sergeant) to reveal or trade safely.\n"
             "- Avoid endless shuffling; if safe options exist, attack to gain information.\n"
+            "- If the enemy has only a few pieces left, prioritize attacking.\n"
+            "- Probe immobile enemy pieces with low ranks to test for Bombs.\n"
+            "- If a Bomb is confirmed and a Miner can attack it, do so.\n"
         )
         if hasattr(agent, "set_move_history"):
             agent.set_move_history(move_history[pid][-10:])
@@ -81,6 +107,24 @@ def run_game(agent0, agent1, size=6, seed=None):
             if legal_filtered:
                 action = random.choice(legal_filtered)
 
+        if turns > 30:
+            legal = extract_legal_moves(obs)
+            forbidden = set(extract_forbidden(obs))
+            legal_filtered = [m for m in legal if m not in forbidden] or legal
+            attack_moves = list_attack_moves(legal_filtered, env.env.board, pid)
+            if attack_moves:
+                forced = choose_attack_move(attack_moves, prefer_low_rank=True)
+                if forced and forced != action:
+                    action = forced
+            elif turns > 50 and legal_filtered:
+                last_move = move_history[pid][-1]["move"] if move_history[pid] else ""
+                avoid_move = reverse_move(last_move) if last_move else None
+                if avoid_move and avoid_move in legal_filtered:
+                    for mv in legal_filtered:
+                        if mv != avoid_move:
+                            action = mv
+                            break
+
         move_history[pid].append({
             "turn": turns,
             "move": action,
@@ -95,6 +139,7 @@ def run_game(agent0, agent1, size=6, seed=None):
         )
 
         done, _ = env.step(action)
+        state = env.get_state()
         turns += 1
 
         if state.game_info.get(pid, {}).get("invalid_move"):
@@ -137,6 +182,11 @@ def run_game(agent0, agent1, size=6, seed=None):
                             inferences[viewer_id].record_captured(move_details.piece_type)
             else:
                 if battle_occurred and move_details.target_piece:
+                    if move_details.target_piece == "Bomb":
+                        if battle_outcome == "lost":
+                            inferences[viewer_id].note_bomb_confirmed(move_details.dst_pos)
+                        else:
+                            inferences[viewer_id].note_bomb_removed(move_details.dst_pos)
                     if battle_outcome == "lost":
                         inferences[viewer_id].note_enemy_revealed(
                             pos=move_details.dst_pos,
@@ -161,11 +211,13 @@ def run_game(agent0, agent1, size=6, seed=None):
             gs = state.game_state
             gi = state.game_info
 
+            if move_details.target_piece == "Flag" and battle_outcome == "won":
+                flag_captured = True
+
             if gs.get("termination") == "invalid":
                 reason_verbose = f"Invalid move: {gs.get('invalid_reason', 'Invalid move')}"
-
             else:
-                raw = gi.get("reason", "")
+                raw = gi.get(pid, {}).get("reason", "")
                 # Normalize reason to string for downstream metrics/logs
                 if isinstance(raw, (list, tuple)):
                     raw_reason = "; ".join(map(str, raw))
@@ -185,8 +237,10 @@ def run_game(agent0, agent1, size=6, seed=None):
                     reason_verbose = "Turn limit reached"
                 elif "repetition" in raw_lower:
                     reason_verbose = "Two-squares repetition rule violation"
+                elif raw_reason:
+                    reason_verbose = raw_reason
                 else:
-                    reason_verbose = raw_reason or "Game ended without explicit winner"
+                    reason_verbose = "Game ended without explicit winner"
 
             # TextArena does not store a winner in game_info; derive from rewards
             rewards = getattr(state, "rewards", None)

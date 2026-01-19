@@ -46,9 +46,21 @@ def install_strategos():
     )
     ta_init_text = ta_init.read_text(encoding="utf-8")
     if marker not in ta_init_text:
-        with ta_init.open("a", encoding="utf-8") as f:
-            f.write("\n\n" + marker + "\n")
-            f.write(registration_code)
+        updated = []
+        if 'id="Stratego-duel"' not in ta_init_text:
+            updated.append(
+                'register_with_versions(id="Stratego-duel", entry_point="textarena.envs.StrategoDuel.env:StrategoDuelEnv", '
+                'wrappers={"default": DEFAULT_WRAPPERS, "-train": BOARDGAME_WRAPPERS})'
+            )
+        if 'id="Stratego-custom"' not in ta_init_text:
+            updated.append(
+                'register_with_versions(id="Stratego-custom", entry_point="textarena.envs.StrategoCustom.env:StrategoCustomEnv", '
+                'wrappers={"default": DEFAULT_WRAPPERS, "-train": BOARDGAME_WRAPPERS})'
+            )
+        if updated:
+            with ta_init.open("a", encoding="utf-8") as f:
+                f.write("\n\n" + marker + "\n")
+                f.write("\n".join(updated) + "\n")
     # DEFAULT_WRAPPERS = [LLMObservationWrapper, ActionFormattingWrapper]
     # BOARDGAME_WRAPPERS = [GameMessagesAndCurrentBoardObservationWrapper, ActionFormattingWrapper]
     # try:

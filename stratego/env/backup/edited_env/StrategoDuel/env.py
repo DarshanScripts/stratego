@@ -281,8 +281,6 @@ class StrategoDuelEnv(ta.Env):
             self.state.set_winner(player_id=winner, reason="Elimination.")
         elif self._check_stalemate():
             self.state.set_winner(player_id=-1, reason="Stalemate.")
-        elif self.turn_count > 1000:
-            self.state.set_winner(player_id=-1, reason="Turn limit.")
 
         # Update full-board render into game_state (for terminal rendering)
         self.state.game_state["rendered_board"] = self._render_board(
