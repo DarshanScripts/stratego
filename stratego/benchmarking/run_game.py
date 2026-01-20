@@ -32,7 +32,7 @@ def get_last_prompt_observation(state, player_id):
     return ""
 
 
-def run_game(agent0, agent1, size=6, seed=None, start_player=None):
+def run_game(agent0, agent1, size=6, seed=None, start_player=None, max_turns=200):
     env = StrategoEnv(env_id="Stratego-custom", size=size)
     env.reset(num_players=2, seed=seed)
     if start_player in (0, 1):
@@ -57,6 +57,10 @@ def run_game(agent0, agent1, size=6, seed=None, start_player=None):
     flag_captured = False
 
     while not done:
+        if max_turns and turns >= max_turns:
+            reason_verbose = "Turn limit reached"
+            winner = -1
+            break
         state = env.get_state()
         rep = env.repetition_count()
         pid = state.current_player_id
