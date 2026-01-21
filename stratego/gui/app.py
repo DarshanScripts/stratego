@@ -26,6 +26,7 @@ class StrategoGUI:
         self.root.title("Stratego")
         self.root.configure(bg="#1a1a1a")
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
+        self._set_window_icon()
 
         self._stop_event = threading.Event()
         self._queue: "queue.Queue[dict]" = queue.Queue()
@@ -136,7 +137,26 @@ class StrategoGUI:
         self._lake_images_raw = self._load_lake_images()
         self._lake_images: Dict[str, ImageTk.PhotoImage] = {}
         self._lake_items: List[List[Optional[int]]] = []
+        self._piece_token_map = {
+            "FL": "flag",
+            "BM": "bomb",
+            "SP": "spy",
+            "SC": "scout",
+            "MN": "miner",
+            "SG": "sergeant",
+            "LT": "lieutenant",
+            "CP": "captain",
+            "MJ": "major",
+            "CL": "colonel",
+            "GN": "general",
+            "MS": "marshal",
+        }
+        self._piece_images_raw = self._load_piece_images()
+        self._piece_images: Dict[Tuple[str, int], ImageTk.PhotoImage] = {}
+        self._unknown_images_raw = self._load_unknown_images()
+        self._unknown_images: Dict[int, ImageTk.PhotoImage] = {}
         self._last_tokens: List[List[str]] = []
+        self._active_player_id: Optional[int] = None
         self._model_display = {0: "Player 0", 1: "Player 1"}
 
         self._status_label = ttk.Label(self._side_frame, text="Waiting...", font=("Consolas", 12, "bold"))
@@ -302,6 +322,7 @@ class StrategoGUI:
                 if item.get("type") == "state":
                     if self._aborting:
                         continue
+                    self._active_player_id = item.get("player_id")
                     self._render_board(item["board"])
                     self._turn_label.configure(text=f"Turn: {item['display_turn']}")
                     model = self._model_display.get(item["player_id"], f"Player {item['player_id']}")
@@ -411,9 +432,77 @@ class StrategoGUI:
                 if lake_id:
                     self._board_canvas.delete(lake_id)
                     self._lake_items[r][c] = None
+
+                if token == "?":
+                    unknown_image = self._unknown_images.get(self._active_player_id or 0)
+                    if unknown_image:
+                        x = origin_x + c * cell
+                        y = origin_y + r * cell
+                        if item_id is None or self._board_canvas.type(item_id) != "image":
+                            if item_id:
+                                self._board_canvas.delete(item_id)
+                            item_id = self._board_canvas.create_image(
+                                x,
+                                y,
+                                image=unknown_image,
+                                anchor="nw",
+                                tags=("piece",),
+                            )
+                            self._board_items[r][c] = item_id
+                        else:
+                            self._board_canvas.coords(item_id, x, y)
+                            self._board_canvas.itemconfigure(item_id, image=unknown_image)
+                    else:
+                        x = origin_x + c * cell + cell / 2
+                        y = origin_y + r * cell + cell / 2
+                        if item_id is None or self._board_canvas.type(item_id) != "text":
+                            if item_id:
+                                self._board_canvas.delete(item_id)
+                            item_id = self._board_canvas.create_text(
+                                x,
+                                y,
+                                text=token,
+                                fill=_cell_fg(token),
+                                font=("Consolas", font_size, "bold"),
+                                tags=("piece",),
+                            )
+                            self._board_items[r][c] = item_id
+                        else:
+                            self._board_canvas.coords(item_id, x, y)
+                            self._board_canvas.itemconfigure(
+                                item_id,
+                                text=token,
+                                fill=_cell_fg(token),
+                                font=("Consolas", font_size, "bold"),
+                            )
+                    continue
+
+                side = self._active_player_id if self._active_player_id is not None else 0
+                piece_image = self._piece_images.get((token, side))
+                if piece_image:
+                    x = origin_x + c * cell
+                    y = origin_y + r * cell
+                    if item_id is None or self._board_canvas.type(item_id) != "image":
+                        if item_id:
+                            self._board_canvas.delete(item_id)
+                        item_id = self._board_canvas.create_image(
+                            x,
+                            y,
+                            image=piece_image,
+                            anchor="nw",
+                            tags=("piece",),
+                        )
+                        self._board_items[r][c] = item_id
+                    else:
+                        self._board_canvas.coords(item_id, x, y)
+                        self._board_canvas.itemconfigure(item_id, image=piece_image)
+                    continue
+
                 x = origin_x + c * cell + cell / 2
                 y = origin_y + r * cell + cell / 2
-                if item_id is None:
+                if item_id is None or self._board_canvas.type(item_id) != "text":
+                    if item_id:
+                        self._board_canvas.delete(item_id)
                     item_id = self._board_canvas.create_text(
                         x,
                         y,
@@ -431,6 +520,8 @@ class StrategoGUI:
                         fill=_cell_fg(token),
                         font=("Consolas", font_size, "bold"),
                     )
+
+        self._board_canvas.tag_raise("piece")
 
     def _load_board_image(self) -> Optional[Image.Image]:
         path = Path(__file__).resolve().parent / "sprites" / "board.png"
@@ -453,6 +544,36 @@ class StrategoGUI:
                 continue
             images[key] = Image.open(path)
         return images
+
+    def _load_piece_images(self) -> Dict[Tuple[str, int], Image.Image]:
+        sprites_dir = Path(__file__).resolve().parent / "sprites"
+        images: Dict[Tuple[str, int], Image.Image] = {}
+        for token, name in self._piece_token_map.items():
+            for side in (0, 1):
+                path = sprites_dir / f"{name}_p{side}.png"
+                if path.exists():
+                    images[(token, side)] = Image.open(path)
+        return images
+
+    def _load_unknown_images(self) -> Dict[int, Image.Image]:
+        sprites_dir = Path(__file__).resolve().parent / "sprites"
+        images: Dict[int, Image.Image] = {}
+        for side in (0, 1):
+            path = sprites_dir / f"unknown_p{side}.png"
+            if path.exists():
+                images[side] = Image.open(path)
+        return images
+
+    def _set_window_icon(self) -> None:
+        path = Path(__file__).resolve().parent / "sprites" / "icon.png"
+        if not path.exists():
+            return
+        try:
+            image = Image.open(path)
+            self._icon_image = ImageTk.PhotoImage(image)
+            self.root.iconphoto(True, self._icon_image)
+        except Exception:
+            pass
 
     def _lake_key(self, tokens: List[List[str]], row: int, col: int) -> str:
         up = row > 0 and col < len(tokens[row - 1]) and tokens[row - 1][col] == "~"
@@ -492,6 +613,8 @@ class StrategoGUI:
         resized = self._board_image_raw.resize((board_px, board_px), Image.NEAREST)
         self._board_image = ImageTk.PhotoImage(resized)
         self._refresh_lake_images(cell)
+        self._refresh_piece_images(cell)
+        self._refresh_unknown_images(cell)
         if self._board_bg_id is None:
             self._board_bg_id = self._board_canvas.create_image(
                 origin_x,
@@ -510,6 +633,22 @@ class StrategoGUI:
         for key, image in self._lake_images_raw.items():
             resized = image.resize((cell, cell), Image.NEAREST)
             self._lake_images[key] = ImageTk.PhotoImage(resized)
+
+    def _refresh_piece_images(self, cell: int) -> None:
+        if not self._piece_images_raw:
+            return
+        self._piece_images.clear()
+        for key, image in self._piece_images_raw.items():
+            resized = image.resize((cell, cell), Image.NEAREST)
+            self._piece_images[key] = ImageTk.PhotoImage(resized)
+
+    def _refresh_unknown_images(self, cell: int) -> None:
+        if not self._unknown_images_raw:
+            return
+        self._unknown_images.clear()
+        for side, image in self._unknown_images_raw.items():
+            resized = image.resize((cell, cell), Image.NEAREST)
+            self._unknown_images[side] = ImageTk.PhotoImage(resized)
 
     def _render_eliminated(self, eliminated: Dict[int, List[str]]) -> None:
         self._p0_elim_box.delete(0, tk.END)
