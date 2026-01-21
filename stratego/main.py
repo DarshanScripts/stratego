@@ -146,16 +146,39 @@ def cli():
         if args.max_turns:
             print(f"⏱️  Max turns limit: {args.max_turns} (testing mode)")
         print()
+        # [ENHANCED - 21 Jan 2026] Added game state tracking for proper winner/draw detection
+        winner = None
+        game_result = ""
         while not done:
             # Check max turns limit
             if args.max_turns and turn >= args.max_turns:
                 print(f"\n⏱️  Reached max turns limit ({args.max_turns}). Stopping game early.")
+                winner = -1
+                game_result = "Draw - max turns reached"
+                logger.set_game_end(winner=-1, reason="Max turns reached", flag_captured=False)
                 break
             
             player_id, observation = env.get_observation()
             current_agent = agents[player_id]
             player_display = f"Player {player_id+1}"
             model_name = current_agent.model_name
+            
+            # [NEW - 21 Jan 2026] Check if player has valid moves (DRAW DETECTION)
+            # Properly detects when game should end due to no available moves
+            legal = extract_legal_moves(observation)
+            forbidden = set(extract_forbidden(observation))
+            legal_filtered = [m for m in legal if m not in forbidden]
+            
+            if not legal_filtered:
+                print(f"\n🏁 Game Over: {player_display} has no valid moves left!")
+                winner = 1 - player_id
+                game_result = f"Player {winner+1} wins - opponent has no valid moves"
+                logger.set_game_end(winner=winner, reason="No valid moves left", flag_captured=False)
+                done = True
+                break
+            
+            # [NEW - 21 Jan 2026] Start timing the move for performance tracking
+            move_start_time = logger.log_move_start(player_id, turn)
             
             # --- NEW LOGGING FOR TURN, PLAYER, AND MODEL ---
             print(f"\n>>>> TURN {turn}: {player_display} ({model_name}) is moving...")
@@ -221,6 +244,9 @@ def cli():
                     print(f"[TURN {turn}] Fallback to random available move: {action}")
                 else:
                     print(f"[TURN {turn}] No legal moves available for fallback; ending game loop.")
+                    # [FIXED - 21 Jan 2026] Set draw when no valid moves available
+                    winner = -1
+                    game_result = "Draw - No valid moves available"
                     break
                 
             # --- NEW LOGGING FOR STRATEGY/MODEL DECISION ---
@@ -386,6 +412,7 @@ def cli():
                 )
                 print(f"[HISTORY] Skipping invalid move from history: {action}")
 
+            # [ENHANCED - 21 Jan 2026] Added timing and validity tracking to move logging
             logger.log_move(turn=turn,
                                 player=player_id,
                                 model_name=getattr(current_agent, "model_name", "unknown"),
@@ -398,6 +425,8 @@ def cli():
                                 move_direction=move_details.move_direction,
                                 target_piece=move_details.target_piece,
                                 battle_outcome=battle_outcome,
+                                start_time=move_start_time,  # [NEW - 21 Jan 2026] Track timing
+                                is_valid=(outcome != "invalid"),  # [NEW - 21 Jan 2026] Track validity
                             )
             turn += 1
 
@@ -411,27 +440,52 @@ def cli():
         print(f"\nGame finished. Duration: {int(game_duration // 60)}m {int(game_duration % 60)}s")
         print(f"Result: {rewards} | {game_info}")
         
+        # [ENHANCED - 21 Jan 2026] Handle draw scenario where rewards is None
+        if rewards is None:
+            rewards = {0: 0, 1: 0}
+        
+        # [ENHANCED - 21 Jan 2026] Improved winner detection to preserve early game-end states
         # Logic to declare the specific winner based on rewards
         # Rewards are usually {0: 1, 1: -1} (P0 Wins) or {0: -1, 1: 1} (P1 Wins)
         p0_score = rewards.get(0, 0)
         p1_score = rewards.get(1, 0)
-        winner = None
-        game_result = ""
-
-    if p0_score > p1_score:
-        winner = 0
-        print(f"\n🏆 * * * PLAYER 1 WINS! * * * 🏆")
-        print(f"Agent: {agents[0].model_name}")
-    elif p1_score > p0_score:
-        winner = 1
-        print(f"\n🏆 * * * PLAYER 2 WINS! * * * 🏆")
-        print(f"Agent: {agents[1].model_name}")
-    else:
-        print(f"\n🤝 * * * IT'S A DRAW! * * * 🤝")
+        
+        # Only set winner if not already set by earlier conditions (draw, no moves, etc.)
+        if winner is None:
+            if p0_score > p1_score:
+                winner = 0
+                game_result = "Player 1 wins"
+            elif p1_score > p0_score:
+                winner = 1
+                game_result = "Player 2 wins"
+            else:
+                winner = -1
+                game_result = "Draw"
+            
+            # Determine if flag was captured
+            flag_captured = False
+            if isinstance(game_info, dict):
+                for player_info in game_info.values():
+                    if isinstance(player_info, dict) and player_info.get("flag_captured"):
+                        flag_captured = True
+                        break
+            
+            logger.set_game_end(winner=winner, reason=game_result, flag_captured=flag_captured)
+        
+        # Display winner
+        if winner == 0:
+            print(f"\n🏆 * * * PLAYER 1 WINS! * * * 🏆")
+            print(f"Agent: {agents[0].model_name}")
+        elif winner == 1:
+            print(f"\n🏆 * * * PLAYER 2 WINS! * * * 🏆")
+            print(f"Agent: {agents[1].model_name}")
+        else:
+            print(f"\n🤝 * * * IT'S A DRAW! * * * 🤝")
 
         print("\nDetails:")
         print(f"Final Rewards: {rewards}")
         print(f"Game Info: {game_info}")
+        print(f"Game End Reason: {game_result}")
     
     try:
         invalid_players = [
@@ -462,9 +516,10 @@ def cli():
                 
     except Exception as e:
         print(f"[LOG PATCH] Failed to patch CSV outcome: {e}")
-            
-        # Finalize the game log with winner info in every row
-        logger.finalize_game(winner=winner, game_result=game_result)
+    
+    # [CRITICAL - 21 Jan 2026] Finalize the game log and generate all summary CSVs
+    # This creates: game_summary_{id}.csv, all_games_summary.csv, and move_times_{id}.csv
+    logger.finalize_game(winner=winner, game_result=game_result)
     
     # LLM analyzes the game CSV and updates prompt
     analyze_and_update_prompt(

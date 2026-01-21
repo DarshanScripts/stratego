@@ -1,3 +1,4 @@
+# [FIXED - 21 Jan 2026] Fixed type annotations for ENV_REGISTRY
 import re, random, importlib
 from typing import Any, Union, List, Callable, Dict, Tuple, Optional
 from dataclasses import dataclass, field
@@ -5,8 +6,8 @@ from dataclasses import dataclass, field
 import textarena as ta 
 
 
-# Global environment registry
-ENV_REGISTRY: Dict[str, Callable] = {}
+# Global environment registry - stores EnvSpec objects, not Callables
+ENV_REGISTRY: Dict[str, "EnvSpec"] = {}
 
 @dataclass
 class EnvSpec:
@@ -28,8 +29,11 @@ def register(id: str, entry_point: Callable, default_wrappers: Optional[List[ta.
     ENV_REGISTRY[id] = EnvSpec(id=id, entry_point=entry_point, default_wrappers=default_wrappers, kwargs=kwargs)
 
 def register_with_versions(id: str, entry_point: Callable, wrappers: Optional[Dict[str, List[ta.Wrapper]]]=None, **kwargs: Any):
-    """Register an environment with a given ID."""
+    """[FIXED - 21 Jan 2026] Added None check for wrappers parameter"""
     if id in ENV_REGISTRY: raise ValueError(f"Environment {id} already registered.")
+    
+    if wrappers is None:
+        wrappers = {}
 
     # first register default version
     ENV_REGISTRY[id] = EnvSpec(id=id, entry_point=entry_point, default_wrappers=wrappers.get("default"), kwargs=kwargs)

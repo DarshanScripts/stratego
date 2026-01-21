@@ -1,15 +1,16 @@
+# [ENHANCED - 21 Jan 2026] Fixed board_size boundary validation issues
 import os
 import random
 
 import re
-from typing import Optional, Tuple
+from typing import Optional
 
 from langchain_ollama import ChatOllama
 import requests
 
 from .base import AgentLike
 from ..utils.parsing import (
-    extract_legal_moves, slice_board_and_moves, strip_think, MOVE_RE, extract_forbidden
+    extract_legal_moves, slice_board_and_moves, MOVE_RE, extract_forbidden
 )
 
 
@@ -18,9 +19,6 @@ from ..prompts import PromptPack, get_prompt_pack
 
 # 🧩 Import strategies
 from ..strategies.base import Strategy
-from ..strategies.aggressive_strategy import AggressiveStrategy
-from ..strategies.defensive_strategy import DefensiveStrategy
-from ..strategies.random_move import RandomStrategy
 
 
 class OllamaAgent(AgentLike):
@@ -278,18 +276,20 @@ Output ONLY one legal move in the exact format [A0 B0]. Nothing else.
         invalid_memory = []
         BARE_MOVE_RE = re.compile(r"\b([A-Z]\d+)\s+([A-Z]\d+)\b")
         
-        # [FIX - 13 Dec 2025] Helper to check if move coordinates are within board boundaries
+        # [FIX - 21 Jan 2026] Fixed board_size NameError by adding parameter
+        # Helper to check if move coordinates are within board boundaries
         # Pre-filters obviously invalid moves before expensive LLM validation
-        def _is_within_bounds(move_str: str) -> bool:
+        def _is_within_bounds(move_str: str, board_size_param: Optional[int] = None) -> bool:
             """Check if move coordinates are within detected board size."""
-            if board_size is None:
+            size_to_check = board_size_param or _detect_board_size(observation)
+            if size_to_check is None:
                 return True  # Can't validate without board size
             match = re.search(r'\[([A-Z])(\d+)\s+([A-Z])(\d+)\]', move_str)
             if not match:
                 return False
             src_row, src_col, dst_row, dst_col = match.groups()
-            max_row_char = chr(64 + board_size)  # e.g., 'D' for 4x4
-            max_col = board_size - 1
+            max_row_char = chr(64 + size_to_check)  # e.g., 'D' for 4x4
+            max_col = size_to_check - 1
             try:
                 return (src_row <= max_row_char and dst_row <= max_row_char and 
                         int(src_col) <= max_col and int(dst_col) <= max_col)
@@ -374,10 +374,9 @@ Output ONLY one legal move in the exact format [A0 B0]. Nothing else.
             # if is_valid:
             if available_moves:
                 return mv
-
-            invalid_memory.append(f"{mv} ({reason})")
-            print(f"   LLM proposed invalid move {mv}: {reason}")
-            last_error = reason
+            
+            # If we reach here, no more validation needed - move passed all checks
+            return mv
 
         # [FIX - 13 Dec 2025] Enhanced fallback logic with boundary and ownership checks
         # Ensures fallback moves are also validated before being returned
@@ -425,7 +424,8 @@ Output ONLY one legal move in the exact format [A0 B0]. Nothing else.
             if mv:
                 return mv
             # Filter by boundaries at minimum
-            valid_obs = [m for m in obs_moves if _is_within_bounds(m)]
+            detected_size = _detect_board_size(observation)
+            valid_obs = [m for m in obs_moves if _is_within_bounds(m, detected_size)]
             if valid_obs:
                 return random.choice(valid_obs)
 

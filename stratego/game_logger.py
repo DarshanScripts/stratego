@@ -1,34 +1,68 @@
 # stratego/game_logger.py
+# [ENHANCED - 21 Jan 2026] Major upgrade to support comprehensive game metrics
+# Added: move timing, winner/loser tracking, invalid move counting, repetition detection,
+# game end reason tracking, and generation of Excel reports with multiple sheets
+# [RESTRUCTURED - 21 Jan 2026] Changed to generate:
+#   1. One CSV per game with all details
+#   2. One Master Excel with 2 sheets (All Games Results + Summary Statistics)
 from __future__ import annotations
-import csv, os, datetime
-from typing import Optional, List
-
+import csv
+import time
+import os
+from datetime import datetime
+from pathlib import Path
+from typing import List, Optional
+try:
+    import openpyxl
+    from openpyxl import Workbook, load_workbook
+    from openpyxl.styles import Font, PatternFill, Alignment
+    EXCEL_AVAILABLE = True
+except ImportError:
+    EXCEL_AVAILABLE = False
+    print("⚠️  openpyxl not installed. Install with: pip install openpyxl")
 
 class GameLogger:
     """
-    One CSV file per game stored in logs/games/ folder.
-    
-    CSV Fields for training:
-      - turn, player, model_name
-      - move, from_pos, to_pos, piece_type
-      - board_state, available_moves, move_direction
-      - target_piece, battle_outcome
-      - prompt_name
-      - game_winner, game_result (filled post-game)
+    Enhanced GameLogger that tracks game metrics and move times.
+    Creates CSV files per game with detailed move-by-move logs and summary metrics.
     """
     def __init__(self, out_dir: str, game_id: Optional[str] = None, prompt_name: str = "", game_type: str = "standard", board_size: int = 10):
-        # Create games subfolder
-        games_dir = os.path.join(out_dir, "games")
-        os.makedirs(games_dir, exist_ok=True)
+        # Setup directories
+        self.out_dir = out_dir
+        self.logs_dir = Path(out_dir)
+        self.games_dir = self.logs_dir / "games"
+        self.games_dir.mkdir(parents=True, exist_ok=True)
         
-        ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        # Game identification
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
         self.game_id = game_id or ts
         self.prompt_name = prompt_name
-        self.game_type = game_type  # "standard", "duel", or "custom"
+        self.game_type = game_type
         self.board_size = board_size
-        self.path = os.path.join(games_dir, f"{self.game_id}.csv")
+        
+        # [ENHANCED - 21 Jan 2026] Added comprehensive metrics tracking for game analysis
+        # Tracks: winner/loser, game end reason, flag capture, turn counts, invalid moves,
+        # repetitions, move history, timing data, and game duration
+        self.player_0_name = ""
+        self.player_1_name = ""
+        self.winner: Optional[int] = None
+        self.loser: Optional[int] = None
+        self.game_end_reason = ""
+        self.flag_captured_by: Optional[int] = None
+        self.total_turns = 0
+        self.player_0_turns = 0
+        self.player_1_turns = 0
+        self.player_0_invalid_moves = 0
+        self.player_1_invalid_moves = 0
+        self.repetition_moves = 0
+        self.move_history: List[str] = []
+        self.move_times: List[dict] = []
+        self.start_time = time.time()
+        self.end_time: Optional[float] = None
+        
+        # CSV file for move-by-move logging
+        self.path = os.path.join(self.games_dir, f"{self.game_id}.csv")
         self._f = open(self.path, "w", newline="", encoding="utf-8")
-        # Use full set of fields up-front so partial logs are readable during play
         self._writer = csv.DictWriter(
             self._f,
             fieldnames=[
@@ -37,13 +71,24 @@ class GameLogger:
                 "board_state", "available_moves", "move_direction",
                 "target_piece", "battle_outcome",
                 "prompt_name", "game_type", "board_size",
-                "outcome",
+                "outcome", "time_taken_seconds", "is_valid",
             ],
             quoting=csv.QUOTE_MINIMAL,
             escapechar="\\"
         )
         self._writer.writeheader()
-        self._rows: List[dict] = []  # Store rows for post-game update
+        self._rows: List[dict] = []
+    
+    def set_players(self, player_0_name: str, player_1_name: str):
+        """Set player names for metrics"""
+        self.player_0_name = player_0_name
+        self.player_1_name = player_1_name
+    
+    def log_move_start(self, player: int, turn: int):
+        """[NEW - 21 Jan 2026] Track move start time for performance analysis
+        Returns: timestamp to be passed to log_move for timing calculation
+        """
+        return time.time()
 
     def log_move(
         self,
@@ -60,7 +105,51 @@ class GameLogger:
         move_direction: str = "",
         target_piece: str = "",
         battle_outcome: str = "",
+        start_time: Optional[float] = None,
+        is_valid: bool = True,
     ):
+        """[ENHANCED - 21 Jan 2026] Extended to track move timing and validity
+        Now calculates time taken, tracks repetitions, counts turns/invalid moves,
+        and stores timing data for each player's performance analysis
+        """
+        # Calculate time taken
+        time_taken = time.time() - start_time if start_time else 0.0
+        
+        # Track metrics
+        self.move_history.append(move)
+        if self.move_history.count(move) >= 3:
+            self.repetition_moves += 1
+        
+        # Store move time data
+        self.move_times.append({
+            'player': player,
+            'turn': turn,
+            'time_taken': time_taken,
+            'is_valid': is_valid,
+            'model_name': model_name
+        })
+        
+        # Update turn counters
+        if is_valid:
+            if player == 0:
+                self.player_0_turns += 1
+            else:
+                self.player_1_turns += 1
+            self.total_turns += 1
+        else:
+            if player == 0:
+                self.player_0_invalid_moves += 1
+            else:
+                self.player_1_invalid_moves += 1
+        
+        # Store player names if not set
+        if model_name:
+            if player == 0 and not self.player_0_name:
+                self.player_0_name = model_name
+            elif player == 1 and not self.player_1_name:
+                self.player_1_name = model_name
+        
+        # Prepare row data (streamlined columns only)
         row = {
             "turn": turn,
             "player": player,
@@ -69,56 +158,543 @@ class GameLogger:
             "from_pos": src,
             "to_pos": dst,
             "piece_type": piece_type,
-            "board_state": board_state,
-            "available_moves": available_moves,
             "move_direction": move_direction,
             "target_piece": target_piece,
             "battle_outcome": battle_outcome,
-            "prompt_name": self.prompt_name,
-            "game_type": self.game_type,
             "board_size": self.board_size,
-            "outcome": outcome,
+            "time_taken_seconds": round(time_taken, 4),
+            "game_end_reason": "",  # Will be filled in last row only
         }
-
-        # Store row in memory for post-game rewrite and write immediately to the file
+        
+        # Store and write
         self._rows.append(row)
         try:
             self._writer.writerow(row)
             self._f.flush()
         except Exception:
-            # If writing fails, keep going (file may be temporarily locked)
             pass
     
-    def finalize_game(self, winner: Optional[int], game_result: str = ""):
+    def log_invalid_move(self, player: int):
+        """[NEW - 21 Jan 2026] Track invalid moves per player for analysis"""
+        if player == 0:
+            self.player_0_invalid_moves += 1
+        else:
+            self.player_1_invalid_moves += 1
+    
+    def set_game_end(self, winner: int, reason: str, flag_captured: bool = False):
+        """[NEW - 21 Jan 2026] Record game end details including winner, reason, and flag capture status"""
+        self.end_time = time.time()
+        self.winner = winner
+        self.loser = 1 - winner if winner in [0, 1] else None
+        self.game_end_reason = reason
+        
+        if flag_captured:
+            self.flag_captured_by = winner
+    
+    def finalize_game(self, winner: Optional[int] = None, game_result: str = ""):
+        """[ENHANCED - 21 Jan 2026] Finalize game and generate reports
+        Creates:
+        1. One CSV with all game details
+        2. Updates Master Excel with 2 sheets (All Games + Summary Statistics)
         """
-        Rewrite CSV with game outcome in every row.
-        This allows each move to be labeled with the game result for training.
-        """
+        if winner is None:
+            winner = self.winner
+        
+        if game_result and not self.game_end_reason:
+            self.game_end_reason = game_result
+        
+        # Close move log file
         self._f.close()
         
-        # Update all rows with game outcome
-        winner_str = str(winner) if winner is not None else "draw"
-        for row in self._rows:
-            row["game_winner"] = winner_str
-            row["game_result"] = game_result
+        # Update ONLY the last row with game end information
+        if self._rows:
+            winner_name = self.player_0_name if winner == 0 else (self.player_1_name if winner == 1 else "Draw")
+            game_end_info = f"{winner_name} wins - {self.game_end_reason or game_result}"
+            self._rows[-1]["game_end_reason"] = game_end_info
         
-        # Rewrite the file with updated data
+        # [NEW - 21 Jan 2026] Save detailed per-game CSV with all move data
+        self._save_detailed_game_csv()
+        
+        # [NEW - 21 Jan 2026] Update Master Excel with both sheets
+        if EXCEL_AVAILABLE:
+            self._update_master_excel()
+        else:
+            print("⚠️  Excel reports skipped - openpyxl not installed")
+    
+    def _save_detailed_game_csv(self):
+        """[NEW - 21 Jan 2026] Save comprehensive CSV for this game only"""
         with open(self.path, "w", newline="", encoding="utf-8") as f:
             writer = csv.DictWriter(
                 f,
                 fieldnames=[
                     "turn", "player", "model_name",
                     "move", "from_pos", "to_pos", "piece_type",
-                    "board_state", "available_moves", "move_direction",
-                    "target_piece", "battle_outcome",
-                    "prompt_name", "game_type", "board_size",
-                    "outcome", "game_winner", "game_result",
+                    "move_direction", "target_piece", "battle_outcome",
+                    "board_size", "time_taken_seconds", "game_end_reason",
                 ],
                 quoting=csv.QUOTE_MINIMAL,
                 escapechar="\\"
             )
             writer.writeheader()
             writer.writerows(self._rows)
+        
+        print(f"📊 Game details saved to {self.path}")
+    
+    def _update_master_excel(self):
+        """[NEW - 21 Jan 2026] Rebuild Master Excel from ALL CSV files in logs/games
+        Sheet 1: All Games Results (one row per game)
+        Sheet 2: Summary Statistics (aggregated model comparison)
+        """
+        master_file = self.games_dir / "Master_Game_Results.xlsx"
+        
+        # [CRITICAL - 21 Jan 2026] Read ALL CSV files from logs/games to rebuild master
+        all_games_data = []
+        csv_files = sorted([f for f in self.games_dir.glob("*.csv")])
+        
+        for csv_file in csv_files:
+            try:
+                with open(csv_file, 'r', encoding='utf-8') as f:
+                    reader = csv.DictReader(f)
+                    rows = list(reader)
+                    if not rows:
+                        continue
+                    
+                    # Extract game-level data from first row (all rows have same game data)
+                    first_row = rows[0]
+                    
+                    # Extract model names for each player
+                    model_p0 = 'Unknown'
+                    model_p1 = 'Unknown'
+                    for r in rows:
+                        if r.get('player') == '0' and r.get('model_name'):
+                            model_p0 = r.get('model_name')
+                            break
+                    for r in rows:
+                        if r.get('player') == '1' and r.get('model_name'):
+                            model_p1 = r.get('model_name')
+                            break
+                    
+                    # Count metrics across all rows
+                    total_turns = len([r for r in rows if r.get('player') in ['0', '1']])
+                    invalid_p0 = len([r for r in rows if r.get('player') == '0' and r.get('is_valid') == 'False'])
+                    invalid_p1 = len([r for r in rows if r.get('player') == '1' and r.get('is_valid') == 'False'])
+                    
+                    # Count repetitions per player (moves with same from_pos -> to_pos)
+                    moves_seen_p0 = set()
+                    moves_seen_p1 = set()
+                    repetitions_p0 = 0
+                    repetitions_p1 = 0
+                    for r in rows:
+                        move_key = f"{r.get('from_pos')}->{r.get('to_pos')}"
+                        if move_key != "None->None" and r.get('player'):
+                            if r.get('player') == '0':
+                                if move_key in moves_seen_p0:
+                                    repetitions_p0 += 1
+                                moves_seen_p0.add(move_key)
+                            elif r.get('player') == '1':
+                                if move_key in moves_seen_p1:
+                                    repetitions_p1 += 1
+                                moves_seen_p1.add(move_key)
+                    
+                    # Extract winner (from game_winner column)
+                    winner_str = first_row.get('game_winner', '-1')
+                    try:
+                        winner = int(winner_str) if winner_str and winner_str != '' else -1
+                    except:
+                        winner = -1
+                    
+                    # Calculate time taken per player
+                    time_p0 = []
+                    time_p1 = []
+                    for r in rows:
+                        try:
+                            t = float(r.get('time_taken_seconds', 0))
+                            if t > 0:
+                                if r.get('player') == '0':
+                                    time_p0.append(t)
+                                elif r.get('player') == '1':
+                                    time_p1.append(t)
+                        except:
+                            pass
+                    
+                    total_time_p0 = round(sum(time_p0), 2) if time_p0 else 0
+                    total_time_p1 = round(sum(time_p1), 2) if time_p1 else 0
+                    
+                    # Get game end reason
+                    game_end_reason = first_row.get('game_end_reason', 'Unknown')
+                    
+                    game_data = {
+                        'model_p0': model_p0,
+                        'model_p1': model_p1,
+                        'board_size': int(first_row.get('board_size', 10)),
+                        'winner': winner,
+                        'turns': total_turns,
+                        'invalid_moves_p0': invalid_p0,
+                        'invalid_moves_p1': invalid_p1,
+                        'num_invalid_moves': invalid_p0 + invalid_p1,
+                        'repetitions_p0': repetitions_p0,
+                        'repetitions_p1': repetitions_p1,
+                        'time_p0': total_time_p0,
+                        'time_p1': total_time_p1,
+                        'game_end_reason': game_end_reason,
+                    }
+                    all_games_data.append(game_data)
+                    
+            except Exception as e:
+                print(f"⚠️  Warning: Could not read {csv_file.name}: {e}")
+                continue
+        
+        # Create new workbook (rebuild from scratch each time)
+        wb = Workbook()
+        wb.remove(wb.active)  # Remove default sheet
+        
+        # [SHEET 1 - 21 Jan 2026] All Games Results
+        ws1 = wb.create_sheet("All Games Results")
+        
+        # Add headers with styling
+        if all_games_data:
+            headers = list(all_games_data[0].keys())
+            ws1.append(headers)
+            for cell in ws1[1]:
+                cell.font = Font(bold=True, size=11)
+                cell.fill = PatternFill(start_color="4472C4", end_color="4472C4", fill_type="solid")
+                cell.alignment = Alignment(horizontal="center")
+            
+            # Add all game data
+            for game_data in all_games_data:
+                ws1.append(list(game_data.values()))
+        
+        # [SHEET 2 - 21 Jan 2026] Summary Statistics
+        self._update_summary_statistics_sheet(wb, ws1)
+        
+        # [SHEET 3 - 21 Jan 2026] Charts & Visualizations
+        self._create_charts_sheet(wb, ws1)
+        
+        # Save workbook
+        wb.save(master_file)
+        print(f"📊 Master Excel updated: {master_file}")
+    
+    def _update_summary_statistics_sheet(self, wb, all_games_ws):
+        """[NEW - 21 Jan 2026] Generate comprehensive Summary Statistics sheet"""
+        if "Summary Statistics" in wb.sheetnames:
+            wb.remove(wb["Summary Statistics"])
+        
+        ws2 = wb.create_sheet("Summary Statistics")
+        
+        # Read all game data from Sheet 1
+        all_games = []
+        headers = [cell.value for cell in all_games_ws[1]]
+        for row in all_games_ws.iter_rows(min_row=2, values_only=True):
+            # Skip empty rows
+            if not any(row):
+                continue
+            all_games.append(dict(zip(headers, row)))
+        
+        if not all_games:
+            return
+        
+        total_games = len(all_games)
+        
+        # Extract unique models (filter None and convert to string)
+        all_models = set()
+        for game in all_games:
+            if game.get('model_p0') is not None:
+                all_models.add(str(game['model_p0']))
+            if game.get('model_p1') is not None:
+                all_models.add(str(game['model_p1']))
+        all_models = sorted(list(all_models))
+        
+        # Calculate comprehensive statistics per model
+        model_stats = {model: {
+            'total_wins': 0,
+            'total_losses': 0,
+            'games_played': 0,
+            'turns_when_won': [],
+            'turns_when_lost': [],
+            'invalid_moves_total': 0,
+            'repetitions_total': 0,
+            'time_taken_total': 0
+        } for model in all_models}
+        
+        draws = 0
+        all_turns = []
+        all_invalid = []
+        all_repetitions = []
+        
+        for game in all_games:
+            winner = game.get('winner')
+            model_p0 = str(game.get('model_p0', ''))
+            model_p1 = str(game.get('model_p1', ''))
+            turns = game.get('turns', 0) if isinstance(game.get('turns'), (int, float)) else 0
+            invalid_p0 = game.get('invalid_moves_p0', 0) if isinstance(game.get('invalid_moves_p0'), (int, float)) else 0
+            invalid_p1 = game.get('invalid_moves_p1', 0) if isinstance(game.get('invalid_moves_p1'), (int, float)) else 0
+            reps_p0 = game.get('repetitions_p0', 0) if isinstance(game.get('repetitions_p0'), (int, float)) else 0
+            reps_p1 = game.get('repetitions_p1', 0) if isinstance(game.get('repetitions_p1'), (int, float)) else 0
+            num_invalid = game.get('num_invalid_moves', 0) if isinstance(game.get('num_invalid_moves'), (int, float)) else 0
+            time_p0 = game.get('time_p0', 0) if isinstance(game.get('time_p0'), (int, float)) else 0
+            time_p1 = game.get('time_p1', 0) if isinstance(game.get('time_p1'), (int, float)) else 0
+            
+            # Skip if model names are invalid
+            if not model_p0 or not model_p1 or model_p0 not in model_stats or model_p1 not in model_stats:
+                continue
+            
+            all_turns.append(turns)
+            all_invalid.append(num_invalid)
+            all_repetitions.append(reps_p0 + reps_p1)
+            
+            # Update model stats (each model gets its own time and repetitions)
+            model_stats[model_p0]['games_played'] += 1
+            model_stats[model_p1]['games_played'] += 1
+            model_stats[model_p0]['invalid_moves_total'] += invalid_p0
+            model_stats[model_p1]['invalid_moves_total'] += invalid_p1
+            model_stats[model_p0]['repetitions_total'] += reps_p0
+            model_stats[model_p1]['repetitions_total'] += reps_p1
+            model_stats[model_p0]['time_taken_total'] += time_p0
+            model_stats[model_p1]['time_taken_total'] += time_p1
+            
+            if winner == 0:
+                model_stats[model_p0]['total_wins'] += 1
+                model_stats[model_p1]['total_losses'] += 1
+                model_stats[model_p0]['turns_when_won'].append(turns)
+                model_stats[model_p1]['turns_when_lost'].append(turns)
+            elif winner == 1:
+                model_stats[model_p1]['total_wins'] += 1
+                model_stats[model_p0]['total_losses'] += 1
+                model_stats[model_p1]['turns_when_won'].append(turns)
+                model_stats[model_p0]['turns_when_lost'].append(turns)
+            else:
+                draws += 1
+        
+        # Build comprehensive summary
+        row = 1
+        
+        # Title
+        ws2.cell(row, 1, "🎮 STRATEGO AI - COMPREHENSIVE ANALYSIS").font = Font(bold=True, size=14, color="FFFFFF")
+        ws2.cell(row, 1).fill = PatternFill(start_color="2E75B6", end_color="2E75B6", fill_type="solid")
+        ws2.merge_cells(f"A{row}:D{row}")
+        row += 2
+        
+        # ===== OVERALL STATISTICS =====
+        ws2.cell(row, 1, "📊 OVERALL STATISTICS").font = Font(bold=True, size=12)
+        ws2.cell(row, 1).fill = PatternFill(start_color="FFC000", end_color="FFC000", fill_type="solid")
+        row += 1
+        ws2.append(["Total Games Played", total_games])
+        ws2.append(["Total Wins (All Models)", sum(m['total_wins'] for m in model_stats.values())])
+        ws2.append(["Total Losses (All Models)", sum(m['total_losses'] for m in model_stats.values())])
+        ws2.append(["Total Draws", draws])
+        ws2.append(["Average Turns per Game", round(sum(all_turns)/len(all_turns), 2) if all_turns else 0])
+        ws2.append(["Average Invalid Moves per Game", round(sum(all_invalid)/len(all_invalid), 2) if all_invalid else 0])
+        ws2.append(["Average Repetitions per Game", round(sum(all_repetitions)/len(all_repetitions), 2) if all_repetitions else 0])
+        row = ws2.max_row + 2
+        
+        # ===== MODEL PERFORMANCE COMPARISON TABLE =====
+        ws2.cell(row, 1, "🏆 MODEL PERFORMANCE COMPARISON").font = Font(bold=True, size=12)
+        ws2.cell(row, 1).fill = PatternFill(start_color="70AD47", end_color="70AD47", fill_type="solid")
+        row += 1
+        
+        # Headers
+        header_row = ["Model", "Games", "Wins", "Losses", "Win Rate %", "Avg Turns (Win)", "Avg Turns (Loss)", "Avg Invalid/Game", "Avg Time (s)"]
+        ws2.append(header_row)
+        for cell in ws2[ws2.max_row]:
+            cell.font = Font(bold=True)
+            cell.fill = PatternFill(start_color="D9E1F2", end_color="D9E1F2", fill_type="solid")
+            cell.alignment = Alignment(horizontal="center")
+        
+        # Model data rows
+        for model in all_models:
+            stats = model_stats[model]
+            games = stats['games_played']
+            wins = stats['total_wins']
+            losses = stats['total_losses']
+            win_rate = round((wins / games * 100), 1) if games > 0 else 0
+            avg_turns_win = round(sum(stats['turns_when_won']) / len(stats['turns_when_won']), 1) if stats['turns_when_won'] else 0
+            avg_turns_loss = round(sum(stats['turns_when_lost']) / len(stats['turns_when_lost']), 1) if stats['turns_when_lost'] else 0
+            avg_invalid = round(stats['invalid_moves_total'] / games, 2) if games > 0 else 0
+            avg_time = round(stats['time_taken_total'] / games, 2) if games > 0 else 0
+            
+            ws2.append([model, games, wins, losses, win_rate, avg_turns_win, avg_turns_loss, avg_invalid, avg_time])
+        
+        row = ws2.max_row + 2
+        
+        # ===== DETAILED MODEL BREAKDOWN =====
+        ws2.cell(row, 1, "📈 DETAILED MODEL BREAKDOWN").font = Font(bold=True, size=12)
+        ws2.cell(row, 1).fill = PatternFill(start_color="9BC2E6", end_color="9BC2E6", fill_type="solid")
+        row += 1
+        
+        for model in all_models:
+            stats = model_stats[model]
+            ws2.append([f"--- {model} ---"])
+            ws2[ws2.max_row][0].font = Font(bold=True, size=11)
+            ws2.append(["  Total Wins", stats['total_wins']])
+            ws2.append(["  Total Losses", stats['total_losses']])
+            ws2.append(["  Games Played", stats['games_played']])
+            ws2.append(["  Total Invalid Moves", stats['invalid_moves_total']])
+            ws2.append(["  Total Repetitions", stats['repetitions_total']])
+            ws2.append(["  Total Time Taken (s)", round(stats['time_taken_total'], 2)])
+            ws2.append(["  Avg Time per Game (s)", round(stats['time_taken_total'] / stats['games_played'], 2) if stats['games_played'] > 0 else 0])
+            ws2.append([])  # Blank row
+        
+        # Column widths
+        ws2.column_dimensions['A'].width = 30
+        ws2.column_dimensions['B'].width = 12
+        ws2.column_dimensions['C'].width = 12
+        ws2.column_dimensions['D'].width = 12
+        ws2.column_dimensions['E'].width = 15
+        ws2.column_dimensions['F'].width = 18
+        ws2.column_dimensions['G'].width = 18
+        ws2.column_dimensions['H'].width = 18
+        ws2.column_dimensions['I'].width = 15
+    
+    def _create_charts_sheet(self, wb, all_games_ws):
+        """[NEW - 21 Jan 2026] Create Charts & Visualizations sheet with bar and pie charts"""
+        try:
+            from openpyxl.chart import BarChart, PieChart, Reference
+            from openpyxl.chart.label import DataLabelList
+        except ImportError:
+            print("⚠️  Chart creation requires openpyxl with chart support")
+            return
+        
+        if "Charts" in wb.sheetnames:
+            wb.remove(wb["Charts"])
+        
+        ws3 = wb.create_sheet("Charts")
+        
+        # Read all game data from Sheet 1
+        all_games = []
+        headers = [cell.value for cell in all_games_ws[1]]
+        for row in all_games_ws.iter_rows(min_row=2, values_only=True):
+            if not any(row):
+                continue
+            all_games.append(dict(zip(headers, row)))
+        
+        if not all_games:
+            return
+        
+        # Extract unique models and calculate statistics
+        all_models = set()
+        for game in all_games:
+            if game.get('model_p0'):
+                all_models.add(str(game['model_p0']))
+            if game.get('model_p1'):
+                all_models.add(str(game['model_p1']))
+        all_models = sorted(list(all_models))
+        
+        # Calculate model statistics
+        model_wins = {model: 0 for model in all_models}
+        model_games = {model: 0 for model in all_models}
+        model_avg_turns = {model: [] for model in all_models}
+        model_avg_time = {model: [] for model in all_models}
+        
+        for game in all_games:
+            model_p0 = str(game.get('model_p0', ''))
+            model_p1 = str(game.get('model_p1', ''))
+            winner = game.get('winner')
+            turns = game.get('turns', 0) if isinstance(game.get('turns'), (int, float)) else 0
+            time_p0 = game.get('time_p0', 0) if isinstance(game.get('time_p0'), (int, float)) else 0
+            time_p1 = game.get('time_p1', 0) if isinstance(game.get('time_p1'), (int, float)) else 0
+            
+            if model_p0 in model_wins:
+                model_games[model_p0] += 1
+                model_avg_turns[model_p0].append(turns)
+                model_avg_time[model_p0].append(time_p0)
+                if winner == 0:
+                    model_wins[model_p0] += 1
+            
+            if model_p1 in model_wins:
+                model_games[model_p1] += 1
+                model_avg_turns[model_p1].append(turns)
+                model_avg_time[model_p1].append(time_p1)
+                if winner == 1:
+                    model_wins[model_p1] += 1
+        
+        # Calculate averages
+        for model in all_models:
+            if model_avg_turns[model]:
+                model_avg_turns[model] = round(sum(model_avg_turns[model]) / len(model_avg_turns[model]), 1)
+            else:
+                model_avg_turns[model] = 0
+            
+            if model_avg_time[model]:
+                model_avg_time[model] = round(sum(model_avg_time[model]) / len(model_avg_time[model]), 2)
+            else:
+                model_avg_time[model] = 0
+        
+        # === DATA TABLE FOR CHARTS ===
+        ws3.append(["Model", "Wins", "Games", "Win Rate %", "Avg Turns", "Avg Time (s)"])
+        ws3[1][0].font = Font(bold=True)
+        
+        for model in all_models:
+            games = model_games[model]
+            wins = model_wins[model]
+            win_rate = round((wins / games * 100), 1) if games > 0 else 0
+            ws3.append([model, wins, games, win_rate, model_avg_turns[model], model_avg_time[model]])
+        
+        # === PIE CHART: Win Distribution ===
+        pie_chart = PieChart()
+        pie_chart.title = "Win Distribution by Model"
+        pie_chart.style = 10
+        
+        labels = Reference(ws3, min_col=1, min_row=2, max_row=len(all_models) + 1)
+        data = Reference(ws3, min_col=2, min_row=1, max_row=len(all_models) + 1)
+        pie_chart.add_data(data, titles_from_data=True)
+        pie_chart.set_categories(labels)
+        
+        ws3.add_chart(pie_chart, "H2")
+        
+        # === BAR CHART: Average Turns ===
+        bar_chart1 = BarChart()
+        bar_chart1.type = "col"
+        bar_chart1.title = "Average Turns per Game by Model"
+        bar_chart1.y_axis.title = "Average Turns"
+        bar_chart1.x_axis.title = "Model"
+        
+        labels = Reference(ws3, min_col=1, min_row=2, max_row=len(all_models) + 1)
+        data = Reference(ws3, min_col=5, min_row=1, max_row=len(all_models) + 1)
+        bar_chart1.add_data(data, titles_from_data=True)
+        bar_chart1.set_categories(labels)
+        
+        ws3.add_chart(bar_chart1, "H18")
+        
+        # === BAR CHART: Average Time ===
+        bar_chart2 = BarChart()
+        bar_chart2.type = "col"
+        bar_chart2.title = "Average Time per Game by Model (seconds)"
+        bar_chart2.y_axis.title = "Average Time (s)"
+        bar_chart2.x_axis.title = "Model"
+        
+        labels = Reference(ws3, min_col=1, min_row=2, max_row=len(all_models) + 1)
+        data = Reference(ws3, min_col=6, min_row=1, max_row=len(all_models) + 1)
+        bar_chart2.add_data(data, titles_from_data=True)
+        bar_chart2.set_categories(labels)
+        
+        ws3.add_chart(bar_chart2, "H34")
+        
+        # === BAR CHART: Win Rate ===
+        bar_chart3 = BarChart()
+        bar_chart3.type = "col"
+        bar_chart3.title = "Win Rate by Model (%)"
+        bar_chart3.y_axis.title = "Win Rate %"
+        bar_chart3.x_axis.title = "Model"
+        
+        labels = Reference(ws3, min_col=1, min_row=2, max_row=len(all_models) + 1)
+        data = Reference(ws3, min_col=4, min_row=1, max_row=len(all_models) + 1)
+        bar_chart3.add_data(data, titles_from_data=True)
+        bar_chart3.set_categories(labels)
+        
+        ws3.add_chart(bar_chart3, "P2")
+        
+        # Column widths
+        ws3.column_dimensions['A'].width = 25
+        ws3.column_dimensions['B'].width = 12
+        ws3.column_dimensions['C'].width = 12
+        ws3.column_dimensions['D'].width = 15
+        ws3.column_dimensions['E'].width = 15
+        ws3.column_dimensions['F'].width = 15
+    
+    def _calculate_avg_move_time(self, player: int) -> float:
+        """Calculate average move time for a player"""
+        player_times = [m['time_taken'] for m in self.move_times if m['player'] == player and m['is_valid']]
+        return round(sum(player_times) / len(player_times), 4) if player_times else 0.0
     
     def close(self):
         try:

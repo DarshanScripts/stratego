@@ -1,4 +1,5 @@
 # stratego/benchmarking/plot_metrics.py
+# [FIXED - 21 Jan 2026] Fixed range/int addition issues in win rate calculations
 
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -8,7 +9,8 @@ import sys
 def plot_from_csv(csv_path: str, rolling_window: int = 3):
     df = pd.read_csv(csv_path)
 
-    games = range(len(df))
+    # [FIXED - 21 Jan 2026] Convert range to list for proper indexing
+    games = list(range(len(df)))
 
     # ===============================
     # 1. GAME LENGTH PER GAME
@@ -65,11 +67,12 @@ def plot_from_csv(csv_path: str, rolling_window: int = 3):
     # ===============================
     # 5. CUMULATIVE WIN RATE
     # ===============================
+    # [FIXED - 21 Jan 2026] Use len(df) instead of games+1 for proper calculation
     p0_wins = (df["winner"] == 0).cumsum()
     p1_wins = (df["winner"] == 1).cumsum()
 
-    win_rate_p0 = p0_wins / (games + 1)
-    win_rate_p1 = p1_wins / (games + 1)
+    win_rate_p0 = p0_wins / range(1, len(df) + 1)
+    win_rate_p1 = p1_wins / range(1, len(df) + 1)
 
     plt.figure()
     plt.plot(games, win_rate_p0, label="P0 Win Rate")
