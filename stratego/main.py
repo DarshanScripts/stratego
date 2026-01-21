@@ -442,7 +442,13 @@ def cli():
         
         # [ENHANCED - 21 Jan 2026] Handle draw scenario where rewards is None
         if rewards is None:
-            rewards = {0: 0, 1: 0}
+            # If winner was already determined (e.g., no moves), create appropriate rewards
+            if winner == 0:
+                rewards = {0: 1, 1: -1}
+            elif winner == 1:
+                rewards = {0: -1, 1: 1}
+            else:
+                rewards = {0: 0, 1: 0}
         
         # [ENHANCED - 21 Jan 2026] Improved winner detection to preserve early game-end states
         # Logic to declare the specific winner based on rewards

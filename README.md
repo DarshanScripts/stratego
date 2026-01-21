@@ -1,11 +1,21 @@
 
-# Stratego LLM Project
+# Project: Stratego LLM Test Based Games
 
 ## 1. Introduction
 
-[Write down intro here...]
+Stratego LLM is a research framework designed to evaluate the strategic reasoning and behavioral characteristics of Large Language Models (LLMs) in an imperfect-information game setting.
 
----
+Unlike static benchmarks, this project pits models (e.g., Mistral, Gemma, Llama, Qwen) against each other in the board game Stratego to analyze dynamic performance. The primary goal is to determine which model performs better by measuring:
+
+Win Rates & Dominance: Quantitative analysis of Win/Loss/Draw ratios across 100+ match simulations.
+
+Behavioral Profiling: Classifying models as Stable (consistent, rule-abiding) vs. Aggressive (high attack frequency, risky plays).
+
+Efficiency: Measuring time-to-move and token consumption to determine the "cost of intelligence."
+
+Strategic Consistency: Analyzing how often models hallucinate invalid moves versus making logically sound decisions.
+
+The system includes an automated arena for batch matchmaking, a custom logger for dataset creation, and a prompt-optimizer that refines strategies based on match outcomes.
 
 ## 2. Project Initialization (Local Setup)
 
