@@ -205,7 +205,7 @@ Open a **new** local terminal (connected via SSH) to interact with the running s
 
 * **Check available models:**
 ```bash
-curl -s http://127.0.0.1:{your_host_port}/api/tags | jq -r '.models[].name'
+curl -s http://127.0.0.1:11435/api/tags | jq -r '.models[].name'
 
 ```
 

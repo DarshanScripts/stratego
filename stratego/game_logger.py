@@ -68,10 +68,8 @@ class GameLogger:
             fieldnames=[
                 "turn", "player", "model_name",
                 "move", "from_pos", "to_pos", "piece_type",
-                "board_state", "available_moves", "move_direction",
-                "target_piece", "battle_outcome",
-                "prompt_name", "game_type", "board_size",
-                "outcome", "time_taken_seconds", "is_valid",
+                "move_direction", "target_piece", "battle_outcome",
+                "board_size", "time_taken_seconds", "game_end_reason",
             ],
             quoting=csv.QUOTE_MINIMAL,
             escapechar="\\"
@@ -171,8 +169,9 @@ class GameLogger:
         try:
             self._writer.writerow(row)
             self._f.flush()
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"❌ ERROR writing move to CSV: {e}")
+            print(f"   Row data: {row}")
     
     def log_invalid_move(self, player: int):
         """[NEW - 21 Jan 2026] Track invalid moves per player for analysis"""
@@ -216,8 +215,16 @@ class GameLogger:
         self._save_detailed_game_csv()
         
         # [NEW - 21 Jan 2026] Update Master Excel with both sheets
+        print(f"🔧 DEBUG: EXCEL_AVAILABLE = {EXCEL_AVAILABLE}")
         if EXCEL_AVAILABLE:
-            self._update_master_excel()
+            try:
+                print(f"🔧 DEBUG: Calling _update_master_excel()...")
+                self._update_master_excel()
+                print(f"✅ DEBUG: _update_master_excel() completed successfully")
+            except Exception as e:
+                print(f"❌ ERROR updating Master Excel: {e}")
+                import traceback
+                traceback.print_exc()
         else:
             print("⚠️  Excel reports skipped - openpyxl not installed")
     
@@ -276,8 +283,11 @@ class GameLogger:
                     
                     # Count metrics across all rows
                     total_turns = len([r for r in rows if r.get('player') in ['0', '1']])
-                    invalid_p0 = len([r for r in rows if r.get('player') == '0' and r.get('is_valid') == 'False'])
-                    invalid_p1 = len([r for r in rows if r.get('player') == '1' and r.get('is_valid') == 'False'])
+                    
+                    # Note: We no longer track invalid moves in CSV (removed is_valid column)
+                    # These will be 0 for all games with new format
+                    invalid_p0 = 0
+                    invalid_p1 = 0
                     
                     # Count repetitions per player (moves with same from_pos -> to_pos)
                     moves_seen_p0 = set()
@@ -286,7 +296,7 @@ class GameLogger:
                     repetitions_p1 = 0
                     for r in rows:
                         move_key = f"{r.get('from_pos')}->{r.get('to_pos')}"
-                        if move_key != "None->None" and r.get('player'):
+                        if move_key != "None->None" and move_key != "->" and r.get('player'):
                             if r.get('player') == '0':
                                 if move_key in moves_seen_p0:
                                     repetitions_p0 += 1
@@ -296,12 +306,20 @@ class GameLogger:
                                     repetitions_p1 += 1
                                 moves_seen_p1.add(move_key)
                     
-                    # Extract winner (from game_winner column)
-                    winner_str = first_row.get('game_winner', '-1')
-                    try:
-                        winner = int(winner_str) if winner_str and winner_str != '' else -1
-                    except:
-                        winner = -1
+                    # Extract winner from game_end_reason (last row)
+                    # Format: "qwen3:8b wins - Player 1 wins" or "Draw - Stalemate"
+                    last_row = rows[-1] if rows else first_row
+                    game_end_reason = last_row.get('game_end_reason', 'Unknown')
+                    
+                    winner = -1  # Default to draw
+                    if game_end_reason and game_end_reason != '':
+                        reason_lower = game_end_reason.lower()
+                        if 'player 1 wins' in reason_lower or model_p0 in game_end_reason:
+                            winner = 0
+                        elif 'player 2 wins' in reason_lower or model_p1 in game_end_reason:
+                            winner = 1
+                        elif 'draw' in reason_lower or 'stalemate' in reason_lower:
+                            winner = -1
                     
                     # Calculate time taken per player
                     time_p0 = []

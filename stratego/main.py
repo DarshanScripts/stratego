@@ -74,6 +74,7 @@ def cli():
     p.add_argument("--game-id", default=None, help="Optional custom game id in CSV filename")
     p.add_argument("--size", type=int, default=10, help="Board size NxN")
     p.add_argument("--max-turns", type=int, default=None, help="Maximum turns before stopping (for testing). E.g., --max-turns 10")
+    p.add_argument("--num-games", type=int, default=1, help="Number of games to play automatically (default: 1). E.g., --num-games 100")
 
     args = p.parse_args()
 
@@ -113,278 +114,210 @@ def cli():
         0: build_agent(args.p0, args.prompt),
         1: build_agent(args.p1, args.prompt),
     }
-    # Check if it is really normal Stratego version
-    if (args.env_id == CUSTOM_ENV): 
-        env = StrategoEnv(env_id=CUSTOM_ENV, size=args.size)
-        game_type = "custom"
-    elif (args.env_id == DUEL_ENV):
-        env = StrategoEnv(env_id=DUEL_ENV)
-        game_type = "duel"
-        args.size = 6  # Duel mode uses 6x6 board
-    else:
-        env = StrategoEnv()
-        game_type = "standard"
-    env.reset(num_players=2)
     
-    # Track game start time
-    game_start_time = time.time()
+    # [NEW - 21 Jan 2026] Loop to play multiple games automatically
+    print(f"\n🎮 Starting {args.num_games} game(s)...")
+    print(f"Player 1: {args.p0}")
+    print(f"Player 2: {args.p1}")
+    print(f"Prompt: {args.prompt}\n")
     
-    # Simple move history tracker (separate for each player)
-    move_history = {0: [], 1: []}
+    for game_num in range(1, args.num_games + 1):
+        if args.num_games > 1:
+            print(f"\n{'='*60}")
+            print(f"🎯 GAME {game_num}/{args.num_games}")
+            print(f"{'='*60}\n")
+        
+        # Reset game state for new game
+        tracker = MoveTrackerClass()
+        inferences = {0: OpponentInference(), 1: OpponentInference()}
+        
+        # Check if it is really normal Stratego version
+        if (args.env_id == CUSTOM_ENV): 
+            env = StrategoEnv(env_id=CUSTOM_ENV, size=args.size)
+            game_type = "custom"
+        elif (args.env_id == DUEL_ENV):
+            env = StrategoEnv(env_id=DUEL_ENV)
+            game_type = "duel"
+            args.size = 6  # Duel mode uses 6x6 board
+        else:
+            env = StrategoEnv()
+            game_type = "standard"
+        env.reset(num_players=2)
+        
+        # Track game start time
+        game_start_time = time.time()
+        
+        # Simple move history tracker (separate for each player)
+        move_history = {0: [], 1: []}
 
-    with GameLogger(out_dir=args.log_dir, game_id=args.game_id, prompt_name=args.prompt, game_type=game_type, board_size=args.size) as logger:
-        for pid in (0, 1):
-            if hasattr(agents[pid], "logger"):
-                agents[pid].logger = logger
-                agents[pid].player_id = pid
+        with GameLogger(out_dir=args.log_dir, game_id=args.game_id, prompt_name=args.prompt, game_type=game_type, board_size=args.size) as logger:
+            for pid in (0, 1):
+                if hasattr(agents[pid], "logger"):
+                    agents[pid].logger = logger
+                    agents[pid].player_id = pid
 
-        done = False
-        turn = 0
-        print("\n--- Stratego LLM Match Started ---")
-        print(f"Player 1 Agent: {agents[0].model_name}")
-        print(f"Player 2 Agent: {agents[1].model_name}")
-        if args.max_turns:
-            print(f"⏱️  Max turns limit: {args.max_turns} (testing mode)")
-        print()
-        # [ENHANCED - 21 Jan 2026] Added game state tracking for proper winner/draw detection
-        winner = None
-        game_result = ""
-        while not done:
-            # Check max turns limit
-            if args.max_turns and turn >= args.max_turns:
-                print(f"\n⏱️  Reached max turns limit ({args.max_turns}). Stopping game early.")
-                winner = -1
-                game_result = "Draw - max turns reached"
-                logger.set_game_end(winner=-1, reason="Max turns reached", flag_captured=False)
-                break
-            
-            player_id, observation = env.get_observation()
-            current_agent = agents[player_id]
-            player_display = f"Player {player_id+1}"
-            model_name = current_agent.model_name
-            
-            # [NEW - 21 Jan 2026] Check if player has valid moves (DRAW DETECTION)
-            # Properly detects when game should end due to no available moves
-            legal = extract_legal_moves(observation)
-            forbidden = set(extract_forbidden(observation))
-            legal_filtered = [m for m in legal if m not in forbidden]
-            
-            if not legal_filtered:
-                print(f"\n🏁 Game Over: {player_display} has no valid moves left!")
-                winner = 1 - player_id
-                game_result = f"Player {winner+1} wins - opponent has no valid moves"
-                logger.set_game_end(winner=winner, reason="No valid moves left", flag_captured=False)
-                done = True
-                break
-            
-            # [NEW - 21 Jan 2026] Start timing the move for performance tracking
-            move_start_time = logger.log_move_start(player_id, turn)
-            
-            # --- NEW LOGGING FOR TURN, PLAYER, AND MODEL ---
-            print(f"\n>>>> TURN {turn}: {player_display} ({model_name}) is moving...")
-
-            if (args.size == 10):
-                print_board(observation)
-            else:
-                print_board(observation, args.size)
-            # Pass recent move history to agent
-            current_agent.set_move_history(move_history[player_id][-10:])
-            history_str = tracker.to_prompt_string(player_id)
-            
-            # [FIX - 13 Dec 2025] Inject board size constraints for small boards
-            # Explicitly reminds LLM of valid coordinate ranges to prevent boundary violations
-            board_size_hint = ""
-            if args.size <= 6:
-                max_row = chr(64 + args.size)  # A=1, B=2, etc. So 4->D, 5->E, 6->F
-                max_col = args.size - 1
-                board_size_hint = f"\n\n[BOARD SIZE: {args.size}x{args.size}. Valid coordinates: A0-{max_row}{max_col}. You can ONLY move uppercase pieces (yours), NOT '?' pieces (opponent's).]\n"
-            
-            # --- [CHANGE] INJECT AGGRESSION WARNING ---
-            # If the game drags on (e.g. > 20 turns), force them to wake up
-            if turn > 20:
-                observation += "\n\n[SYSTEM MESSAGE]: The game is stalling. You MUST ATTACK or ADVANCE immediately. Passive play is forbidden."
-            
-            if turn > 50:
-                 observation += "\n[CRITICAL]: STOP MOVING BACK AND FORTH. Pick a piece and move it FORWARD now."
-            # ------------------------------------------
-
-            observation = observation + history_str
-            observation += "\n" + inferences[player_id].to_prompt()
-            observation += (
-                "\n[ATTACK POLICY]\n"
-                "- Prefer probing attacks against enemy pieces that have moved (not Bomb/Flag).\n"
-                "- Use low-rank pieces (Scout/Miner/Sergeant) to reveal or trade safely.\n"
-                "- Avoid endless shuffling; if safe options exist, attack to gain information.\n"
-            )
-            # print(tracker.to_prompt_string(player_id))
-            lines = history_str.strip().splitlines()
-            if len(lines) <= 1:
-                print(history_str)
-            else:
-                header = lines[0:1]
-                body = lines[1:]
-                tail = body[-5:]  # Show only last 5 moves
-                print("\n".join(header + tail))
-            
-            # The agent (LLM) generates the action, retry a few times; fallback to available moves
-            action = ""
-            max_agent_attempts = 3
-            for attempt in range(max_agent_attempts):
-                action = current_agent(observation)
-                if action:
+            done = False
+            turn = 0
+            print("\n--- Stratego LLM Match Started ---")
+            print(f"Player 1 Agent: {agents[0].model_name}")
+            print(f"Player 2 Agent: {agents[1].model_name}")
+            if args.max_turns:
+                print(f"⏱️  Max turns limit: {args.max_turns} (testing mode)")
+            print()
+            # [ENHANCED - 21 Jan 2026] Added game state tracking for proper winner/draw detection
+            winner = None
+            game_result = ""
+            while not done:
+                # Check max turns limit
+                if args.max_turns and turn >= args.max_turns:
+                    print(f"\n⏱️  Reached max turns limit ({args.max_turns}). Stopping game early.")
+                    winner = -1
+                    game_result = "Draw - max turns reached"
+                    logger.set_game_end(winner=-1, reason="Max turns reached", flag_captured=False)
                     break
-                print(f"[TURN {turn}] {model_name} failed to produce a move (attempt {attempt+1}/{max_agent_attempts}). Retrying...")
-
-            if not action:
+            
+                player_id, observation = env.get_observation()
+                current_agent = agents[player_id]
+                player_display = f"Player {player_id+1}"
+                model_name = current_agent.model_name
+            
+                # [NEW - 21 Jan 2026] Check if player has valid moves (DRAW DETECTION)
+                # Properly detects when game should end due to no available moves
                 legal = extract_legal_moves(observation)
                 forbidden = set(extract_forbidden(observation))
-                legal_filtered = [m for m in legal if m not in forbidden] or legal
-                if legal_filtered:
-                    action = random.choice(legal_filtered)
-                    print(f"[TURN {turn}] Fallback to random available move: {action}")
-                else:
-                    print(f"[TURN {turn}] No legal moves available for fallback; ending game loop.")
-                    # [FIXED - 21 Jan 2026] Set draw when no valid moves available
-                    winner = -1
-                    game_result = "Draw - No valid moves available"
-                    break
-                
-            # --- NEW LOGGING FOR STRATEGY/MODEL DECISION ---
-            print(f"  > AGENT DECISION: {model_name} -> {action}")
-            print(f"  > Strategy/Model: Ollama Agent (T={current_agent.temperature}, Prompt='{args.prompt}')")
-
-            # Extract move details for logging
-            move_pattern = r'\[([A-J]\d+)\s+([A-J]\d+)\]'
-            match = re.search(move_pattern, action)
-            # src_pos = match.group(1) if match else ""
-            # dst_pos = match.group(2) if match else ""
+                legal_filtered = [m for m in legal if m not in forbidden]
             
-            # # Get piece type from board (simplified extraction)
-            # piece_type = ""
-            # if src_pos and hasattr(env, 'game_state') and hasattr(env.game_state, 'board'):
-            #     try:
-            #         # Parse position like "D4" -> row=3, col=3
-            #         col = ord(src_pos[0]) - ord('A')
-            #         row = int(src_pos[1:]) - 1
-            #         piece = env.game_state.board[row][col]
-            #         if piece and hasattr(piece, 'rank_name'):
-            #             piece_type = piece.rank_name
-            #     except:
-            #         piece_type = "Unknown"
-            
-            # # Check if this is a repeated move (last 3 moves)
-            # was_repeated = False
-            # recent_moves = [m["move"] for m in move_history[player_id][-3:]]
-            # if action in recent_moves:
-            #     was_repeated = True
-            
-            # Record this move in history
-            move_history[player_id].append({
-                "turn": turn,
-                "move": action,
-                "text": f"Turn {turn}: You played {action}"
-            })
-
-            # Process move details for logging BEFORE making the environment step
-            move_details = process_move(
-                action=action,
-                board=env.env.board,
-                observation=observation,
-                player_id=player_id
-            )
-
-            # Execute the action exactly once in the environment
-            done, info = env.step(action=action)
-            
-            # Determine battle outcome by checking if target piece was there
-            battle_outcome = ""
-            if move_details.target_piece:
-                # There was a piece at destination, so battle occurred
-                # Check what's at destination now to determine outcome
-                dst_row = ord(move_details.dst_pos[0]) - ord('A')
-                dst_col = int(move_details.dst_pos[1:])
-                cell_after = env.env.board[dst_row][dst_col]
-                
-                if cell_after is None:
-                    # Both pieces removed = draw
-                    battle_outcome = "draw"
-                elif isinstance(cell_after, dict):
-                    if cell_after.get('player') == player_id:
-                        battle_outcome = "won"
-                    else:
-                        battle_outcome = "lost"
-            
-            # Extract outcome from environment observation
-            outcome = "move"
-            # captured = ""
-            obs_text = ""
-            # if isinstance(info, (list, tuple)) and len(info) > 1:
-            #     obs_text = str(info[1])
-            # else:
-            #     obs_text = str(info)
-            if isinstance(info, (list, tuple)):
-                if 0 <= player_id < len(info):
-                    obs_text = str(info[player_id])
-                else:
-                    obs_text = " ".join(str(x) for x in info)
-            else:
-                obs_text = str(info)
-
-            low = obs_text.lower()
-            if "invalid" in low or "illegal" in low:
-                outcome = "invalid"
-            elif "captured" in low or "won the battle" in low:
-                outcome = "won_battle"
-            elif "lost the battle" in low or "defeated" in low:
-                outcome = "lost_battle"
-            elif "draw" in low or "tie" in low:
-                outcome = "draw"
+                if not legal_filtered:
+                    print(f"\n🏁 Game Over: {player_display} has no valid moves left!")
                     
-            event = info.get("event") if isinstance(info, dict) else None
-            extra = info.get("detail") if isinstance(info, dict) else None
-
-            # --- Update enemy inference for both players ---
-            def update_inference_for_player(viewer_id: int, mover_id: int):
-                opponent_id = 1 - viewer_id
-                battle_occurred = bool(move_details.target_piece)
-                if mover_id == opponent_id:
-                    # Opponent moved: mark as mobile (not Bomb/Flag)
-                    inferences[viewer_id].note_enemy_moved(
-                        src_pos=move_details.src_pos,
-                        dst_pos=move_details.dst_pos,
-                    )
-                    if battle_occurred:
-                        if battle_outcome == "won":
-                            # Opponent won; their piece remains and rank is revealed
-                            if move_details.piece_type:
-                                inferences[viewer_id].note_enemy_revealed(
-                                    pos=move_details.dst_pos,
-                                    rank=move_details.piece_type,
-                                )
-                        else:
-                            # Opponent lost or draw; their piece is removed
-                            inferences[viewer_id].note_enemy_removed(move_details.dst_pos)
-                            if battle_outcome == "lost" and move_details.piece_type:
-                                inferences[viewer_id].record_captured(move_details.piece_type)
-                else:
-                    # Viewer moved; only update if a battle revealed enemy rank
-                    if battle_occurred and move_details.target_piece:
-                        if battle_outcome == "lost":
-                            # Enemy survived; rank revealed at dst
-                            inferences[viewer_id].note_enemy_revealed(
-                                pos=move_details.dst_pos,
-                                rank=move_details.target_piece,
-                            )
-                        else:
-                            # Enemy removed
-                            inferences[viewer_id].note_enemy_removed(move_details.dst_pos)
-                            if battle_outcome == "won":
-                                inferences[viewer_id].record_captured(move_details.target_piece)
-
-            update_inference_for_player(0, player_id)
-            update_inference_for_player(1, player_id)
+                    # Check if opponent also has no moves (which would be a draw/stalemate)
+                    opponent_id = 1 - player_id
+                    opponent_obs_raw = env.get_observation()
+                    if opponent_obs_raw and len(opponent_obs_raw) > 1:
+                        opponent_obs = opponent_obs_raw[1]
+                    else:
+                        opponent_obs = ""
+                    
+                    opponent_legal = extract_legal_moves(opponent_obs)
+                    opponent_forbidden = set(extract_forbidden(opponent_obs))
+                    opponent_legal_filtered = [m for m in opponent_legal if m not in opponent_forbidden]
+                    
+                    if not opponent_legal_filtered:
+                        # Both players have no moves = DRAW/STALEMATE
+                        print(f"🏁 Opponent also has no valid moves - STALEMATE!")
+                        winner = -1
+                        game_result = "Draw - Stalemate (both players have no valid moves)"
+                        logger.set_game_end(winner=-1, reason="Stalemate", flag_captured=False)
+                    else:
+                        # Only current player has no moves = opponent wins
+                        winner = 1 - player_id
+                        game_result = f"Player {winner+1} wins - opponent has no valid moves"
+                        logger.set_game_end(winner=winner, reason="No valid moves left", flag_captured=False)
+                    
+                    done = True
+                    break
             
-            if outcome != "invalid":
+                # [NEW - 21 Jan 2026] Start timing the move for performance tracking
+                move_start_time = logger.log_move_start(player_id, turn)
+            
+                # --- NEW LOGGING FOR TURN, PLAYER, AND MODEL ---
+                print(f"\n>>>> TURN {turn}: {player_display} ({model_name}) is moving...")
+
+                if (args.size == 10):
+                    print_board(observation)
+                else:
+                    print_board(observation, args.size)
+                # Pass recent move history to agent
+                current_agent.set_move_history(move_history[player_id][-10:])
+                history_str = tracker.to_prompt_string(player_id)
+            
+                # [FIX - 13 Dec 2025] Inject board size constraints for small boards
+                # Explicitly reminds LLM of valid coordinate ranges to prevent boundary violations
+                board_size_hint = ""
+                if args.size <= 6:
+                    max_row = chr(64 + args.size)  # A=1, B=2, etc. So 4->D, 5->E, 6->F
+                    max_col = args.size - 1
+                    board_size_hint = f"\n\n[BOARD SIZE: {args.size}x{args.size}. Valid coordinates: A0-{max_row}{max_col}. You can ONLY move uppercase pieces (yours), NOT '?' pieces (opponent's).]\n"
+            
+                # --- [CHANGE] INJECT AGGRESSION WARNING ---
+                # If the game drags on (e.g. > 20 turns), force them to wake up
+                if turn > 20:
+                    observation += "\n\n[SYSTEM MESSAGE]: The game is stalling. You MUST ATTACK or ADVANCE immediately. Passive play is forbidden."
+            
+                if turn > 50:
+                     observation += "\n[CRITICAL]: STOP MOVING BACK AND FORTH. Pick a piece and move it FORWARD now."
+                # ------------------------------------------
+
+                observation = observation + history_str
+                observation += "\n" + inferences[player_id].to_prompt()
+                observation += (
+                    "\n[ATTACK POLICY]\n"
+                    "- Prefer probing attacks against enemy pieces that have moved (not Bomb/Flag).\n"
+                    "- Use low-rank pieces (Scout/Miner/Sergeant) to reveal or trade safely.\n"
+                    "- Avoid endless shuffling; if safe options exist, attack to gain information.\n"
+                )
+                # print(tracker.to_prompt_string(player_id))
+                lines = history_str.strip().splitlines()
+                if len(lines) <= 1:
+                    print(history_str)
+                else:
+                    header = lines[0:1]
+                    body = lines[1:]
+                    tail = body[-5:]  # Show only last 5 moves
+                    print("\n".join(header + tail))
+            
+                # The agent (LLM) generates the action, retry a few times; fallback to available moves
+                action = ""
+                max_agent_attempts = 3
+                for attempt in range(max_agent_attempts):
+                    action = current_agent(observation)
+                    if action:
+                        break
+                    print(f"[TURN {turn}] {model_name} failed to produce a move (attempt {attempt+1}/{max_agent_attempts}). Retrying...")
+
+                if not action:
+                    legal = extract_legal_moves(observation)
+                    forbidden = set(extract_forbidden(observation))
+                    legal_filtered = [m for m in legal if m not in forbidden] or legal
+                    if legal_filtered:
+                        action = random.choice(legal_filtered)
+                        print(f"[TURN {turn}] Fallback to random available move: {action}")
+                    else:
+                        print(f"[TURN {turn}] No legal moves available for fallback; ending game loop.")
+                        # [FIXED - 21 Jan 2026] Set draw when no valid moves available
+                        winner = -1
+                        game_result = "Draw - No valid moves available"
+                        break
+                
+                # --- NEW LOGGING FOR STRATEGY/MODEL DECISION ---
+                print(f"  > AGENT DECISION: {model_name} -> {action}")
+                print(f"  > Strategy/Model: Ollama Agent (T={current_agent.temperature}, Prompt='{args.prompt}')")
+
+                # Extract move details for logging
+                move_pattern = r'\[([A-J]\d+)\s+([A-J]\d+)\]'
+                match = re.search(move_pattern, action)
+                # src_pos = match.group(1) if match else ""
+                # dst_pos = match.group(2) if match else ""
+            
+                # # Get piece type from board (simplified extraction)
+                # piece_type = ""
+                # if src_pos and hasattr(env, 'game_state') and hasattr(env.game_state, 'board'):
+                #     try:
+                #         # Parse position like "D4" -> row=3, col=3
+                #         col = ord(src_pos[0]) - ord('A')
+                #         row = int(src_pos[1:]) - 1
+                #         piece = env.game_state.board[row][col]
+                #         if piece and hasattr(piece, 'rank_name'):
+                #             piece_type = piece.rank_name
+                #     except:
+                #         piece_type = "Unknown"
+            
+                # # Check if this is a repeated move (last 3 moves)
+                # was_repeated = False
+                # recent_moves = [m["move"] for m in move_history[player_id][-3:]]
+                # if action in recent_moves:
+                #     was_repeated = True
+            
                 # Record this move in history
                 move_history[player_id].append({
                     "turn": turn,
@@ -392,156 +325,300 @@ def cli():
                     "text": f"Turn {turn}: You played {action}"
                 })
 
-                tracker.record(
-                    player=player_id,
-                    move=action,
-                    event=event,
-                    extra=extra
+                # Process move details for logging BEFORE making the environment step
+                move_details = process_move(
+                    action=action,
+                    board=env.env.board,
+                    observation=observation,
+                    player_id=player_id
                 )
-            else:
-                move_history[player_id].append({
-                    "turn": turn,
-                    "move": action,
-                    "text": f"Turn {turn}: INVALID move {action}"
-                })
-                tracker.record(
-                    player=player_id,
-                    move=action,
-                    event="invalid_move",
-                    extra=extra
-                )
-                print(f"[HISTORY] Skipping invalid move from history: {action}")
 
-            # [ENHANCED - 21 Jan 2026] Added timing and validity tracking to move logging
-            logger.log_move(turn=turn,
-                                player=player_id,
-                                model_name=getattr(current_agent, "model_name", "unknown"),
-                                move=action,
-                                src=move_details.src_pos,
-                                dst=move_details.dst_pos,
-                                piece_type=move_details.piece_type,
-                                board_state=move_details.board_state,
-                                available_moves=move_details.available_moves,
-                                move_direction=move_details.move_direction,
-                                target_piece=move_details.target_piece,
-                                battle_outcome=battle_outcome,
-                                start_time=move_start_time,  # [NEW - 21 Jan 2026] Track timing
-                                is_valid=(outcome != "invalid"),  # [NEW - 21 Jan 2026] Track validity
-                            )
-            turn += 1
-
-
-        # --- Game Over & Winner Announcement ---
-        rewards, game_info = env.close()
-        print("\n" + "="*50)
-        print("--- GAME OVER ---")
-        game_duration = time.time() - game_start_time
-        # Print summary
-        print(f"\nGame finished. Duration: {int(game_duration // 60)}m {int(game_duration % 60)}s")
-        print(f"Result: {rewards} | {game_info}")
-        
-        # [ENHANCED - 21 Jan 2026] Handle draw scenario where rewards is None
-        if rewards is None:
-            # If winner was already determined (e.g., no moves), create appropriate rewards
-            if winner == 0:
-                rewards = {0: 1, 1: -1}
-            elif winner == 1:
-                rewards = {0: -1, 1: 1}
-            else:
-                rewards = {0: 0, 1: 0}
-        
-        # [ENHANCED - 21 Jan 2026] Improved winner detection to preserve early game-end states
-        # Logic to declare the specific winner based on rewards
-        # Rewards are usually {0: 1, 1: -1} (P0 Wins) or {0: -1, 1: 1} (P1 Wins)
-        p0_score = rewards.get(0, 0)
-        p1_score = rewards.get(1, 0)
-        
-        # Only set winner if not already set by earlier conditions (draw, no moves, etc.)
-        if winner is None:
-            if p0_score > p1_score:
-                winner = 0
-                game_result = "Player 1 wins"
-            elif p1_score > p0_score:
-                winner = 1
-                game_result = "Player 2 wins"
-            else:
-                winner = -1
-                game_result = "Draw"
+                # Execute the action exactly once in the environment
+                done, info = env.step(action=action)
             
-            # Determine if flag was captured
-            flag_captured = False
-            if isinstance(game_info, dict):
-                for player_info in game_info.values():
-                    if isinstance(player_info, dict) and player_info.get("flag_captured"):
-                        flag_captured = True
-                        break
-            
-            logger.set_game_end(winner=winner, reason=game_result, flag_captured=flag_captured)
-        
-        # Display winner
-        if winner == 0:
-            print(f"\n🏆 * * * PLAYER 1 WINS! * * * 🏆")
-            print(f"Agent: {agents[0].model_name}")
-        elif winner == 1:
-            print(f"\n🏆 * * * PLAYER 2 WINS! * * * 🏆")
-            print(f"Agent: {agents[1].model_name}")
-        else:
-            print(f"\n🤝 * * * IT'S A DRAW! * * * 🤝")
-
-        print("\nDetails:")
-        print(f"Final Rewards: {rewards}")
-        print(f"Game Info: {game_info}")
-        print(f"Game End Reason: {game_result}")
-    
-    try:
-        invalid_players = [
-            pid for pid, info_dict in (game_info or {}).items()
-            if isinstance(info_dict, dict) and info_dict.get("invalid_move")
-        ]
-        if invalid_players:
-            import csv
-            csv_path = logger.path
-            rows = []
-            fieldnames = None
-
-            with open(csv_path, "r", encoding="utf-8", newline="") as f:
-                reader = csv.DictReader(f)
-                fieldnames = reader.fieldnames
-                for r in reader:
-                    rows.append(r)
-
-            if rows and fieldnames and "outcome" in fieldnames:
-                rows[-1]["outcome"] = "invalid"
-                with open(csv_path, "w", encoding="utf-8", newline="") as f:
-                    writer = csv.DictWriter(f, fieldnames=fieldnames)
-                    writer.writeheader()
-                    writer.writerows(rows)
-
-                print("\n[LOG PATCH] Last move outcome patched to 'invalid' "
-                      f"(player {invalid_players[0]} made an invalid move).")
+                # Determine battle outcome by checking if target piece was there
+                battle_outcome = ""
+                if move_details.target_piece:
+                    # There was a piece at destination, so battle occurred
+                    # Check what's at destination now to determine outcome
+                    dst_row = ord(move_details.dst_pos[0]) - ord('A')
+                    dst_col = int(move_details.dst_pos[1:])
+                    cell_after = env.env.board[dst_row][dst_col]
                 
-    except Exception as e:
-        print(f"[LOG PATCH] Failed to patch CSV outcome: {e}")
+                    if cell_after is None:
+                        # Both pieces removed = draw
+                        battle_outcome = "draw"
+                    elif isinstance(cell_after, dict):
+                        if cell_after.get('player') == player_id:
+                            battle_outcome = "won"
+                        else:
+                            battle_outcome = "lost"
+            
+                # Extract outcome from environment observation
+                outcome = "move"
+                # captured = ""
+                obs_text = ""
+                # if isinstance(info, (list, tuple)) and len(info) > 1:
+                #     obs_text = str(info[1])
+                # else:
+                #     obs_text = str(info)
+                if isinstance(info, (list, tuple)):
+                    if 0 <= player_id < len(info):
+                        obs_text = str(info[player_id])
+                    else:
+                        obs_text = " ".join(str(x) for x in info)
+                else:
+                    obs_text = str(info)
+
+                low = obs_text.lower()
+                if "invalid" in low or "illegal" in low:
+                    outcome = "invalid"
+                elif "captured" in low or "won the battle" in low:
+                    outcome = "won_battle"
+                elif "lost the battle" in low or "defeated" in low:
+                    outcome = "lost_battle"
+                elif "draw" in low or "tie" in low:
+                    outcome = "draw"
+                    
+                event = info.get("event") if isinstance(info, dict) else None
+                extra = info.get("detail") if isinstance(info, dict) else None
+
+                # --- Update enemy inference for both players ---
+                def update_inference_for_player(viewer_id: int, mover_id: int):
+                    opponent_id = 1 - viewer_id
+                    battle_occurred = bool(move_details.target_piece)
+                    if mover_id == opponent_id:
+                        # Opponent moved: mark as mobile (not Bomb/Flag)
+                        inferences[viewer_id].note_enemy_moved(
+                            src_pos=move_details.src_pos,
+                            dst_pos=move_details.dst_pos,
+                        )
+                        if battle_occurred:
+                            if battle_outcome == "won":
+                                # Opponent won; their piece remains and rank is revealed
+                                if move_details.piece_type:
+                                    inferences[viewer_id].note_enemy_revealed(
+                                        pos=move_details.dst_pos,
+                                        rank=move_details.piece_type,
+                                    )
+                            else:
+                                # Opponent lost or draw; their piece is removed
+                                inferences[viewer_id].note_enemy_removed(move_details.dst_pos)
+                                if battle_outcome == "lost" and move_details.piece_type:
+                                    inferences[viewer_id].record_captured(move_details.piece_type)
+                    else:
+                        # Viewer moved; only update if a battle revealed enemy rank
+                        if battle_occurred and move_details.target_piece:
+                            if battle_outcome == "lost":
+                                # Enemy survived; rank revealed at dst
+                                inferences[viewer_id].note_enemy_revealed(
+                                    pos=move_details.dst_pos,
+                                    rank=move_details.target_piece,
+                                )
+                            else:
+                                # Enemy removed
+                                inferences[viewer_id].note_enemy_removed(move_details.dst_pos)
+                                if battle_outcome == "won":
+                                    inferences[viewer_id].record_captured(move_details.target_piece)
+
+                update_inference_for_player(0, player_id)
+                update_inference_for_player(1, player_id)
+            
+                if outcome != "invalid":
+                    # Record this move in history
+                    move_history[player_id].append({
+                        "turn": turn,
+                        "move": action,
+                        "text": f"Turn {turn}: You played {action}"
+                    })
+
+                    tracker.record(
+                        player=player_id,
+                        move=action,
+                        event=event,
+                        extra=extra
+                    )
+                else:
+                    move_history[player_id].append({
+                        "turn": turn,
+                        "move": action,
+                        "text": f"Turn {turn}: INVALID move {action}"
+                    })
+                    tracker.record(
+                        player=player_id,
+                        move=action,
+                        event="invalid_move",
+                        extra=extra
+                    )
+                    print(f"[HISTORY] Skipping invalid move from history: {action}")
+
+                # [ENHANCED - 21 Jan 2026] Added timing and validity tracking to move logging
+                logger.log_move(turn=turn,
+                                    player=player_id,
+                                    model_name=getattr(current_agent, "model_name", "unknown"),
+                                    move=action,
+                                    src=move_details.src_pos,
+                                    dst=move_details.dst_pos,
+                                    piece_type=move_details.piece_type,
+                                    board_state=move_details.board_state,
+                                    available_moves=move_details.available_moves,
+                                    move_direction=move_details.move_direction,
+                                    target_piece=move_details.target_piece,
+                                    battle_outcome=battle_outcome,
+                                    start_time=move_start_time,  # [NEW - 21 Jan 2026] Track timing
+                                    is_valid=(outcome != "invalid"),  # [NEW - 21 Jan 2026] Track validity
+                                )
+                turn += 1
+
+
+            # --- Game Over & Winner Announcement ---
+            rewards, game_info = env.close()
+            print("\n" + "="*50)
+            print("--- GAME OVER ---")
+            game_duration = time.time() - game_start_time
+            # Print summary
+            print(f"\nGame finished. Duration: {int(game_duration // 60)}m {int(game_duration % 60)}s")
+            print(f"Result: {rewards} | {game_info}")
+        
+            # [NEW - 21 Jan 2026] Check for stalemate AFTER game ends
+            # ONLY check if winner hasn't been determined yet (avoid overriding legitimate wins)
+            if winner is None:
+                state = env.get_state()
+                
+                # Get observations for both players to check if they have valid moves
+                try:
+                    p0_obs_raw = env.env.render_for_player(0) if hasattr(env.env, 'render_for_player') else ""
+                    p1_obs_raw = env.env.render_for_player(1) if hasattr(env.env, 'render_for_player') else ""
+                    
+                    p0_legal = extract_legal_moves(str(p0_obs_raw))
+                    p0_forbidden = set(extract_forbidden(str(p0_obs_raw)))
+                    p0_legal_filtered = [m for m in p0_legal if m not in p0_forbidden]
+                    
+                    p1_legal = extract_legal_moves(str(p1_obs_raw))
+                    p1_forbidden = set(extract_forbidden(str(p1_obs_raw)))
+                    p1_legal_filtered = [m for m in p1_legal if m not in p1_forbidden]
+                    
+                    # If BOTH players have no moves, it's a DRAW
+                    if not p0_legal_filtered and not p1_legal_filtered:
+                        print("🔍 STALEMATE DETECTED: Both players have no valid moves!")
+                        winner = -1
+                        game_result = "Draw - Stalemate (both players have no valid moves)"
+                        rewards = {0: 0, 1: 0}
+                except Exception as e:
+                    print(f"⚠️  Could not check for stalemate: {e}")
+        
+            # [ENHANCED - 21 Jan 2026] Handle draw scenario where rewards is None
+            if rewards is None:
+                # If winner was already determined (e.g., no moves), create appropriate rewards
+                if winner == 0:
+                    rewards = {0: 1, 1: -1}
+                elif winner == 1:
+                    rewards = {0: -1, 1: 1}
+                else:
+                    rewards = {0: 0, 1: 0}
+        
+            # [ENHANCED - 21 Jan 2026] Improved winner detection to preserve early game-end states
+            # Logic to declare the specific winner based on rewards
+            # Rewards are usually {0: 1, 1: -1} (P0 Wins) or {0: -1, 1: 1} (P1 Wins)
+            p0_score = rewards.get(0, 0)
+            p1_score = rewards.get(1, 0)
+        
+            # Only set winner if not already set by earlier conditions (draw, no moves, etc.)
+            if winner is None:
+                if p0_score > p1_score:
+                    winner = 0
+                    game_result = "Player 1 wins"
+                elif p1_score > p0_score:
+                    winner = 1
+                    game_result = "Player 2 wins"
+                else:
+                    winner = -1
+                    game_result = "Draw"
+            
+                # Determine if flag was captured
+                flag_captured = False
+                if isinstance(game_info, dict):
+                    for player_info in game_info.values():
+                        if isinstance(player_info, dict) and player_info.get("flag_captured"):
+                            flag_captured = True
+                            break
+            
+                logger.set_game_end(winner=winner, reason=game_result, flag_captured=flag_captured)
+        
+            # Display winner
+            if winner == 0:
+                print(f"\n🏆 * * * PLAYER 1 WINS! * * * 🏆")
+                print(f"Agent: {agents[0].model_name}")
+            elif winner == 1:
+                print(f"\n🏆 * * * PLAYER 2 WINS! * * * 🏆")
+                print(f"Agent: {agents[1].model_name}")
+            else:
+                print(f"\n🤝 * * * IT'S A DRAW! * * * 🤝")
+
+            print("\nDetails:")
+            print(f"Final Rewards: {rewards}")
+            print(f"Game Info: {game_info}")
+            print(f"Game End Reason: {game_result}")
     
-    # [CRITICAL - 21 Jan 2026] Finalize the game log and generate all summary CSVs
-    # This creates: game_summary_{id}.csv, all_games_summary.csv, and move_times_{id}.csv
-    logger.finalize_game(winner=winner, game_result=game_result)
+            try:
+                invalid_players = [
+                    pid for pid, info_dict in (game_info or {}).items()
+                    if isinstance(info_dict, dict) and info_dict.get("invalid_move")
+                ]
+                if invalid_players:
+                    import csv
+                    csv_path = logger.path
+                    rows = []
+                    fieldnames = None
+
+                    with open(csv_path, "r", encoding="utf-8", newline="") as f:
+                        reader = csv.DictReader(f)
+                        fieldnames = reader.fieldnames
+                        for r in reader:
+                            rows.append(r)
+
+                    if rows and fieldnames and "outcome" in fieldnames:
+                        rows[-1]["outcome"] = "invalid"
+                        with open(csv_path, "w", encoding="utf-8", newline="") as f:
+                            writer = csv.DictWriter(f, fieldnames=fieldnames)
+                            writer.writeheader()
+                            writer.writerows(rows)
+
+                        print("\n[LOG PATCH] Last move outcome patched to 'invalid' "
+                              f"(player {invalid_players[0]} made an invalid move).")
+                        
+            except Exception as e:
+                print(f"[LOG PATCH] Failed to patch CSV outcome: {e}")
+            
+            # [CRITICAL - 21 Jan 2026] Finalize the game log and generate all summary CSVs
+            # This creates: game_summary_{id}.csv, all_games_summary.csv, and move_times_{id}.csv
+            logger.finalize_game(winner=winner, game_result=game_result)
+            
+            # LLM analyzes the game CSV and updates prompt
+            analyze_and_update_prompt(
+                csv_path=logger.path,
+                prompts_dir="stratego/prompts",
+                logs_dir=args.log_dir,
+                model_name="mistral:7b",  # Analysis model
+                models_used=[agents[0].model_name, agents[1].model_name],
+                game_duration_seconds=game_duration,
+                winner=winner,
+                total_turns=turn - 1
+            )
+            
+            # Auto-push game data to Hugging Face Hub
+            print("\nSyncing game data to Hugging Face...")
+            auto_push_after_game(
+                logs_dir=os.path.join(args.log_dir, "games"),
+                repo_id="STRATEGO-LLM-TRAINING/stratego",
+            )
     
-    # LLM analyzes the game CSV and updates prompt
-    analyze_and_update_prompt(
-        csv_path=logger.path,
-        prompts_dir="stratego/prompts",
-        logs_dir=args.log_dir,
-        model_name="mistral:7b",  # Analysis model
-        models_used=[agents[0].model_name, agents[1].model_name],
-        game_duration_seconds=game_duration,
-        winner=winner,
-        total_turns=turn - 1
-    )
-    
-    # Auto-push game data to Hugging Face Hub
-    print("\nSyncing game data to Hugging Face...")
-    auto_push_after_game(
-        logs_dir=os.path.join(args.log_dir, "games"),
-        repo_id="STRATEGO-LLM-TRAINING/stratego",
-    )
+        # [NEW - 21 Jan 2026] Print summary after all games complete
+        if args.num_games > 1:
+            print(f"\n{'='*60}")
+            print(f"✅ ALL {args.num_games} GAMES COMPLETED!")
+            print(f"{'='*60}")
+            print(f"📊 Master Excel file updated with all results:")
+            print(f"   logs/games/Master_Game_Results.xlsx")
+            print(f"📁 Individual game CSVs: logs/games/")
+            print(f"{'='*60}\n")
