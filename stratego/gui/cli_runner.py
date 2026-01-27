@@ -25,6 +25,21 @@ from stratego.utils.parsing import extract_board_block_lines, extract_forbidden,
 
 StateCallback = Callable[[dict], None]
 
+RANK_SHORT = {
+    "Flag": "FL",
+    "Spy": "SP",
+    "Scout": "SC",
+    "Miner": "MN",
+    "Sergeant": "SG",
+    "Lieutenant": "LT",
+    "Captain": "CP",
+    "Major": "MJ",
+    "Colonel": "CL",
+    "General": "GN",
+    "Marshal": "MS",
+    "Bomb": "BM",
+}
+
 
 def _call_agent_with_abort(
     agent,
@@ -107,6 +122,7 @@ def run_match(
     move_history = {0: [], 1: []}
     eliminated: Dict[int, List[str]] = {0: [], 1: []}
     turn = 0
+    no_capture_streak = 0
     done = False
     display_turn = 0
     last_signature: Optional[str] = None
@@ -128,7 +144,8 @@ def run_match(
                 movable=movable_counts.get(1 - viewer_id, 0),
             )
 
-        board_tokens, signature = parse_board_tokens(observation, size)
+        board_tokens, owners = board_to_tokens_and_owners(env.env.board, size)
+        signature = "|".join(",".join(row) for row in board_tokens) if board_tokens else ""
         if signature and signature != last_signature:
             last_signature = signature
             display_turn += 1
@@ -137,6 +154,7 @@ def run_match(
             on_state({
                 "player_id": player_id,
                 "board": board_tokens,
+                "owners": owners,
                 "display_turn": display_turn,
                 "engine_turn": turn,
                 "eliminated": eliminated,
@@ -150,11 +168,18 @@ def run_match(
             "- Prefer probing attacks against enemy pieces that have moved (not Bomb/Flag).\n"
             "- Use low-rank pieces (Scout/Miner/Sergeant) to reveal or trade safely.\n"
             "- Avoid endless shuffling; if safe options exist, attack to gain information.\n"
+            "- If there are immobile positions not confirmed as Bombs, treat them as Flag candidates and press toward them.\n"
+            "- Use probes to identify the Flag quickly; do not delay when Flag candidates exist.\n"
         )
         if turn > 20:
             obs += "\n\n[SYSTEM MESSAGE]: The game is stalling. You MUST ATTACK or ADVANCE immediately. Passive play is forbidden."
         if turn > 50:
             obs += "\n[CRITICAL]: STOP MOVING BACK AND FORTH. Pick a piece and move it FORWARD now."
+        if max_turns:
+            remaining_turns = max(max_turns - turn, 0)
+            obs += f"\n[TURN LIMIT]: {remaining_turns} turns remaining. End the game within this limit or you will NOT win."
+        if no_capture_streak >= 10:
+            obs += "\n[FORCE ATTACK]: No pieces have been captured in 10 turns. You MUST ATTACK an enemy piece now."
 
         agent = agent0 if player_id == 0 else agent1
         if hasattr(agent, "set_move_history"):
@@ -257,6 +282,11 @@ def run_match(
                 else:
                     battle_outcome = "lost"
 
+        if move_details.target_piece:
+            no_capture_streak = 0
+        else:
+            no_capture_streak += 1
+
         update_inference(inferences, move_details, battle_outcome, player_id)
         update_eliminated(eliminated, move_details, battle_outcome, player_id)
 
@@ -306,6 +336,35 @@ def parse_board_tokens(observation: str, size: int) -> Tuple[List[List[str]], st
         tokens.append(parts[1:])
     signature = "|".join(",".join(row) for row in tokens)
     return tokens, signature
+
+
+def board_to_tokens_and_owners(board, size: int) -> Tuple[List[List[str]], List[List[Optional[int]]]]:
+    if not board:
+        return [], []
+    tokens: List[List[str]] = []
+    owners: List[List[Optional[int]]] = []
+    for r in range(size):
+        row_tokens: List[str] = []
+        row_owners: List[Optional[int]] = []
+        row = board[r]
+        for c in range(size):
+            cell = row[c]
+            if cell is None:
+                row_tokens.append(".")
+                row_owners.append(None)
+            elif cell == "~":
+                row_tokens.append("~")
+                row_owners.append(None)
+            elif isinstance(cell, dict):
+                rank = cell.get("rank", "?")
+                row_tokens.append(RANK_SHORT.get(rank, rank))
+                row_owners.append(cell.get("player"))
+            else:
+                row_tokens.append(str(cell))
+                row_owners.append(None)
+        tokens.append(row_tokens)
+        owners.append(row_owners)
+    return tokens, owners
 
 
 def update_inference(inferences, move_details, battle_outcome: str, player_id: int) -> None:

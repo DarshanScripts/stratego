@@ -157,6 +157,7 @@ def cli():
 
         done = False
         turn = 0
+        no_capture_streak = 0
         print("\n--- Stratego LLM Match Started ---")
         print(f"Player 1 Agent: {agents[0].model_name}")
         print(f"Player 2 Agent: {agents[1].model_name}")
@@ -204,6 +205,11 @@ def cli():
             if turn > 50:
                  observation += "\n[CRITICAL]: STOP MOVING BACK AND FORTH. Pick a piece and move it FORWARD now."
             # ------------------------------------------
+            if args.max_turns:
+                remaining_turns = max(args.max_turns - turn, 0)
+                observation += f"\n[TURN LIMIT]: {remaining_turns} turns remaining. End the game within this limit or you will NOT win."
+            if no_capture_streak >= 10:
+                observation += "\n[FORCE ATTACK]: No pieces have been captured in 10 turns. You MUST ATTACK an enemy piece now."
 
             observation = observation + history_str
             observation += "\n" + inferences[player_id].to_prompt()
@@ -215,6 +221,8 @@ def cli():
                 "- If the enemy has only a few pieces left, prioritize attacking.\n"
                 "- Probe immobile enemy pieces with low ranks to test for Bombs.\n"
                 "- If a Bomb is confirmed and a Miner can attack it, do so.\n"
+                "- If there are immobile positions not confirmed as Bombs, treat them as Flag candidates and press toward them.\n"
+                "- Use probes to identify the Flag quickly; do not delay when Flag candidates exist.\n"
             )
             # print(tracker.to_prompt_string(player_id))
             lines = history_str.strip().splitlines()
@@ -358,6 +366,11 @@ def cli():
                         battle_outcome = "won"
                     else:
                         battle_outcome = "lost"
+
+            if move_details.target_piece:
+                no_capture_streak = 0
+            else:
+                no_capture_streak += 1
             
             # Extract outcome from environment observation
             outcome = "move"

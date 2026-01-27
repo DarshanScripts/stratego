@@ -156,7 +156,11 @@ class StrategoGUI:
         self._unknown_images_raw = self._load_unknown_images()
         self._unknown_images: Dict[int, ImageTk.PhotoImage] = {}
         self._last_tokens: List[List[str]] = []
+        self._last_owners: List[List[Optional[int]]] = []
         self._active_player_id: Optional[int] = None
+        self._animating = False
+        self._pending_tokens: Optional[List[List[str]]] = None
+        self._pending_owners: Optional[List[List[Optional[int]]]] = None
         self._model_display = {0: "Player 0", 1: "Player 1"}
 
         self._status_label = ttk.Label(self._side_frame, text="Waiting...", font=("Consolas", 12, "bold"))
@@ -323,7 +327,7 @@ class StrategoGUI:
                     if self._aborting:
                         continue
                     self._active_player_id = item.get("player_id")
-                    self._render_board(item["board"])
+                    self._render_board(item["board"], item.get("owners"))
                     self._turn_label.configure(text=f"Turn: {item['display_turn']}")
                     model = self._model_display.get(item["player_id"], f"Player {item['player_id']}")
                     self._status_label.configure(text=f"{model} to move")
@@ -369,10 +373,29 @@ class StrategoGUI:
         self._lobby_frame.grid()
         self._game_frame.grid_remove()
 
-    def _render_board(self, tokens: List[List[str]]) -> None:
+    def _render_board(
+        self,
+        tokens: List[List[str]],
+        owners: Optional[List[List[Optional[int]]]] = None,
+        *,
+        animate: bool = True,
+    ) -> None:
         if not tokens:
             return
+        if animate and not self._animating and self._last_tokens:
+            move = self._detect_move(self._last_tokens, self._last_owners, tokens, owners)
+            if move:
+                src, dst = move
+                src_item = self._board_items[src[0]][src[1]] if self._board_items else None
+                if src_item:
+                    self._animating = True
+                    self._pending_tokens = tokens
+                    self._pending_owners = owners
+                    self._animate_move(src_item, src, dst)
+                    return
         self._last_tokens = tokens
+        if owners is not None:
+            self._last_owners = owners
         size = len(tokens)
         if size != self._board_size:
             self._board_size = size
@@ -477,7 +500,9 @@ class StrategoGUI:
                             )
                     continue
 
-                side = self._active_player_id if self._active_player_id is not None else 0
+                side = 0
+                if owners and r < len(owners) and c < len(owners[r]) and owners[r][c] is not None:
+                    side = owners[r][c] or 0
                 piece_image = self._piece_images.get((token, side))
                 if piece_image:
                     x = origin_x + c * cell
@@ -589,7 +614,7 @@ class StrategoGUI:
     def _on_board_resize(self, _event: tk.Event) -> None:
         self._refresh_board_background(force=False)
         if self._last_tokens:
-            self._render_board(self._last_tokens)
+            self._render_board(self._last_tokens, self._last_owners)
 
     def _refresh_board_background(self, force: bool) -> None:
         if not self._board_image_raw or self._board_size <= 0:
@@ -649,6 +674,107 @@ class StrategoGUI:
         for side, image in self._unknown_images_raw.items():
             resized = image.resize((cell, cell), Image.NEAREST)
             self._unknown_images[side] = ImageTk.PhotoImage(resized)
+
+    def _detect_move(
+        self,
+        prev_tokens: List[List[str]],
+        prev_owners: List[List[Optional[int]]],
+        tokens: List[List[str]],
+        owners: Optional[List[List[Optional[int]]]],
+    ) -> Optional[Tuple[Tuple[int, int], Tuple[int, int]]]:
+        src_candidates: List[Tuple[int, int]] = []
+        dst_candidates: List[Tuple[int, int]] = []
+        size = min(len(prev_tokens), len(tokens))
+        for r in range(size):
+            row_prev = prev_tokens[r]
+            row_curr = tokens[r]
+            for c in range(min(len(row_prev), len(row_curr))):
+                prev_token = row_prev[c]
+                curr_token = row_curr[c]
+                prev_owner = prev_owners[r][c] if prev_owners and r < len(prev_owners) and c < len(prev_owners[r]) else None
+                curr_owner = owners[r][c] if owners and r < len(owners) and c < len(owners[r]) else None
+
+                if prev_token == curr_token and prev_owner == curr_owner:
+                    continue
+
+                if prev_token not in (".", "~") and curr_token in (".", "~"):
+                    src_candidates.append((r, c))
+                    continue
+
+                if curr_token not in (".", "~"):
+                    # destination can be from empty OR capture (piece replaced)
+                    dst_candidates.append((r, c))
+
+        if len(src_candidates) == 1 and len(dst_candidates) == 1:
+            return src_candidates[0], dst_candidates[0]
+        return None
+
+    def _animate_move(self, item_id: int, src: Tuple[int, int], dst: Tuple[int, int]) -> None:
+        cell = self._board_cell_size
+        if cell <= 0:
+            self._finish_animation()
+            return
+        origin_x, origin_y = self._board_origin
+        start_x = origin_x + src[1] * cell
+        start_y = origin_y + src[0] * cell
+        end_x = origin_x + dst[1] * cell
+        end_y = origin_y + dst[0] * cell
+
+        steps = max(12, int(cell / 4))
+        dx = (end_x - start_x) / steps
+        dy = (end_y - start_y) / steps
+
+        dst_item = None
+        if self._board_items:
+            dst_item = self._board_items[dst[0]][dst[1]]
+        if dst_item and dst_item != item_id:
+            self._board_canvas.delete(dst_item)
+            self._board_items[dst[0]][dst[1]] = None
+
+        self._board_canvas.coords(item_id, start_x, start_y)
+
+        def step(n: int) -> None:
+            if n >= steps:
+                self._board_canvas.coords(item_id, end_x, end_y)
+                self._finish_animation()
+                self._highlight_cell(dst)
+                return
+            self._board_canvas.move(item_id, dx, dy)
+            self.root.after(16, lambda: step(n + 1))
+
+        step(0)
+
+    def _finish_animation(self) -> None:
+        self._animating = False
+        if self._pending_tokens is not None:
+            tokens = self._pending_tokens
+            owners = self._pending_owners
+            self._pending_tokens = None
+            self._pending_owners = None
+            self._render_board(tokens, owners, animate=False)
+
+    def _highlight_cell(self, cell_pos: Tuple[int, int]) -> None:
+        cell = self._board_cell_size
+        if cell <= 0:
+            return
+        origin_x, origin_y = self._board_origin
+        r, c = cell_pos
+        x0 = origin_x + c * cell + 2
+        y0 = origin_y + r * cell + 2
+        x1 = x0 + cell - 4
+        y1 = y0 + cell - 4
+        self._board_canvas.delete("highlight")
+        rect_id = self._board_canvas.create_rectangle(
+            x0,
+            y0,
+            x1,
+            y1,
+            outline="#ff3333",
+            width=3,
+            tags=("highlight",),
+        )
+        self._board_canvas.tag_raise(rect_id)
+        self.root.after(800, lambda: self._board_canvas.delete("highlight"))
 
     def _render_eliminated(self, eliminated: Dict[int, List[str]]) -> None:
         self._p0_elim_box.delete(0, tk.END)

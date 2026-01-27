@@ -46,6 +46,7 @@ def run_game(agent0, agent1, size=6, seed=None, start_player=None, max_turns=200
     invalid_moves = {0: 0, 1: 0}
     repetitions = 0
     turns = 0
+    no_capture_streak = 0
     tracker = MoveTrackerClass()
     inferences = {0: OpponentInference(), 1: OpponentInference()}
     move_history = {0: [], 1: []}
@@ -89,6 +90,8 @@ def run_game(agent0, agent1, size=6, seed=None, start_player=None, max_turns=200
             "- If the enemy has only a few pieces left, prioritize attacking.\n"
             "- Probe immobile enemy pieces with low ranks to test for Bombs.\n"
             "- If a Bomb is confirmed and a Miner can attack it, do so.\n"
+            "- If there are immobile positions not confirmed as Bombs, treat them as Flag candidates and press toward them.\n"
+            "- Use probes to identify the Flag quickly; do not delay when Flag candidates exist.\n"
         )
         if hasattr(agent, "set_move_history"):
             agent.set_move_history(move_history[pid][-10:])
@@ -97,6 +100,11 @@ def run_game(agent0, agent1, size=6, seed=None, start_player=None, max_turns=200
             obs += "\n\n[SYSTEM MESSAGE]: The game is stalling. You MUST ATTACK or ADVANCE immediately. Passive play is forbidden."
         if turns > 50:
             obs += "\n[CRITICAL]: STOP MOVING BACK AND FORTH. Pick a piece and move it FORWARD now."
+        if max_turns:
+            remaining_turns = max(max_turns - turns, 0)
+            obs += f"\n[TURN LIMIT]: {remaining_turns} turns remaining. End the game within this limit or you will NOT win."
+        if no_capture_streak >= 10:
+            obs += "\n[FORCE ATTACK]: No pieces have been captured in 10 turns. You MUST ATTACK an enemy piece now."
 
         action = ""
         max_agent_attempts = 3
@@ -164,6 +172,11 @@ def run_game(agent0, agent1, size=6, seed=None, start_player=None, max_turns=200
                     battle_outcome = "won"
                 else:
                     battle_outcome = "lost"
+
+        if move_details.target_piece:
+            no_capture_streak = 0
+        else:
+            no_capture_streak += 1
 
         def update_inference_for_player(viewer_id: int, mover_id: int):
             opponent_id = 1 - viewer_id
