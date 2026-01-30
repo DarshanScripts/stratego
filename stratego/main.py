@@ -480,33 +480,6 @@ def cli():
             print(f"\nGame finished. Duration: {int(game_duration // 60)}m {int(game_duration % 60)}s")
             print(f"Result: {rewards} | {game_info}")
         
-            # [NEW - 21 Jan 2026] Check for stalemate AFTER game ends
-            # ONLY check if winner hasn't been determined yet (avoid overriding legitimate wins)
-            if winner is None:
-                state = env.get_state()
-                
-                # Get observations for both players to check if they have valid moves
-                try:
-                    p0_obs_raw = env.env.render_for_player(0) if hasattr(env.env, 'render_for_player') else ""
-                    p1_obs_raw = env.env.render_for_player(1) if hasattr(env.env, 'render_for_player') else ""
-                    
-                    p0_legal = extract_legal_moves(str(p0_obs_raw))
-                    p0_forbidden = set(extract_forbidden(str(p0_obs_raw)))
-                    p0_legal_filtered = [m for m in p0_legal if m not in p0_forbidden]
-                    
-                    p1_legal = extract_legal_moves(str(p1_obs_raw))
-                    p1_forbidden = set(extract_forbidden(str(p1_obs_raw)))
-                    p1_legal_filtered = [m for m in p1_legal if m not in p1_forbidden]
-                    
-                    # If BOTH players have no moves, it's a DRAW
-                    if not p0_legal_filtered and not p1_legal_filtered:
-                        print("🔍 STALEMATE DETECTED: Both players have no valid moves!")
-                        winner = -1
-                        game_result = "Draw - Stalemate (both players have no valid moves)"
-                        rewards = {0: 0, 1: 0}
-                except Exception as e:
-                    print(f"⚠️  Could not check for stalemate: {e}")
-        
             # [ENHANCED - 21 Jan 2026] Handle draw scenario where rewards is None
             if rewards is None:
                 # If winner was already determined (e.g., no moves), create appropriate rewards

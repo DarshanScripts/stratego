@@ -208,7 +208,9 @@ class GameLogger:
         # Update ONLY the last row with game end information
         if self._rows:
             winner_name = self.player_0_name if winner == 0 else (self.player_1_name if winner == 1 else "Draw")
-            game_end_info = f"{winner_name} wins - {self.game_end_reason or game_result}"
+            # Include flag capture status in the reason text
+            flag_suffix = " - Flag Captured" if hasattr(self, 'flag_captured_by') and self.flag_captured_by is not None else ""
+            game_end_info = f"{winner_name} wins - {self.game_end_reason or game_result}{flag_suffix}"
             self._rows[-1]["game_end_reason"] = game_end_info
         
         # [NEW - 21 Jan 2026] Save detailed per-game CSV with all move data
@@ -309,10 +311,14 @@ class GameLogger:
                     # Extract winner from game_end_reason (last row)
                     # Format: "qwen3:8b wins - Player 1 wins" or "Draw - Stalemate"
                     last_row = rows[-1] if rows else first_row
-                    game_end_reason = last_row.get('game_end_reason', 'Unknown')
+                    game_end_reason = last_row.get('game_end_reason', '').strip()
+                    
+                    # If game_end_reason is empty, set to Unknown
+                    if not game_end_reason:
+                        game_end_reason = 'Unknown'
                     
                     winner = -1  # Default to draw
-                    if game_end_reason and game_end_reason != '':
+                    if game_end_reason and game_end_reason != 'Unknown':
                         reason_lower = game_end_reason.lower()
                         if 'player 1 wins' in reason_lower or model_p0 in game_end_reason:
                             winner = 0
@@ -338,8 +344,15 @@ class GameLogger:
                     total_time_p0 = round(sum(time_p0), 2) if time_p0 else 0
                     total_time_p1 = round(sum(time_p1), 2) if time_p1 else 0
                     
-                    # Get game end reason
-                    game_end_reason = first_row.get('game_end_reason', 'Unknown')
+                    # game_end_reason already extracted above at line 312
+                    # Don't re-extract, just use the existing value
+                    
+                    # [NEW - 22 Jan 2026] Parse game end reason to extract specific end conditions
+                    reason_lower = game_end_reason.lower()
+                    flag_captured = 1 if 'flag' in reason_lower and 'captured' in reason_lower else 0
+                    max_turns_reached = 1 if 'max turns' in reason_lower or 'turn limit' in reason_lower else 0
+                    no_valid_moves = 1 if 'no valid moves' in reason_lower or 'no moves' in reason_lower else 0
+                    stalemate = 1 if 'stalemate' in reason_lower and 'no valid moves' not in reason_lower else 0
                     
                     game_data = {
                         'model_p0': model_p0,
@@ -354,6 +367,10 @@ class GameLogger:
                         'repetitions_p1': repetitions_p1,
                         'time_p0': total_time_p0,
                         'time_p1': total_time_p1,
+                        'flag_captured': flag_captured,
+                        'max_turns_reached': max_turns_reached,
+                        'no_valid_moves': no_valid_moves,
+                        'stalemate': stalemate,
                         'game_end_reason': game_end_reason,
                     }
                     all_games_data.append(game_data)
@@ -382,15 +399,314 @@ class GameLogger:
             for game_data in all_games_data:
                 ws1.append(list(game_data.values()))
         
-        # [SHEET 2 - 21 Jan 2026] Summary Statistics
-        self._update_summary_statistics_sheet(wb, ws1)
+        # [SHEET 2 - 22 Jan 2026] Matchup Comparison (Player 0 vs Player 1)
+        self._create_matchup_comparison_sheet(wb, all_games_data)
         
-        # [SHEET 3 - 21 Jan 2026] Charts & Visualizations
-        self._create_charts_sheet(wb, ws1)
+        # [SHEET 3 - 22 Jan 2026] Summary Statistics (Per-Matchup)
+        self._update_summary_statistics_sheet_matchup_based(wb, all_games_data)
+        
+        # [SHEET 4 - 22 Jan 2026] Charts (Per-Matchup)
+        self._create_charts_sheet_matchup_based(wb, all_games_data)
         
         # Save workbook
         wb.save(master_file)
         print(f"📊 Master Excel updated: {master_file}")
+    
+    def _create_matchup_comparison_sheet(self, wb, all_games_data):
+        """[NEW - 22 Jan 2026] Create matchup-based comparison (P0 vs P1)
+        Shows head-to-head results for each model pairing
+        """
+        if "Matchup Comparison" in wb.sheetnames:
+            wb.remove(wb["Matchup Comparison"])
+        
+        ws = wb.create_sheet("Matchup Comparison", 0)  # Insert as first sheet
+        
+        if not all_games_data:
+            return
+        
+        # Group games by matchup (model_p0 vs model_p1)
+        matchups = {}
+        for game in all_games_data:
+            model_p0 = str(game.get('model_p0', 'Unknown'))
+            model_p1 = str(game.get('model_p1', 'Unknown'))
+            matchup_key = f"{model_p0} vs {model_p1}"
+            
+            if matchup_key not in matchups:
+                matchups[matchup_key] = {
+                    'model_p0': model_p0,
+                    'model_p1': model_p1,
+                    'total_games': 0,
+                    'p0_wins': 0,
+                    'p1_wins': 0,
+                    'draws': 0,
+                    'total_turns': [],
+                    'p0_time': [],
+                    'p1_time': [],
+                    'p0_repetitions': [],
+                    'p1_repetitions': [],
+                    'flag_captured': 0,
+                    'no_moves': 0,
+                    'stalemate': 0,
+                    'max_turns': 0
+                }
+            
+            m = matchups[matchup_key]
+            m['total_games'] += 1
+            m['total_turns'].append(game.get('turns', 0))
+            m['p0_time'].append(game.get('time_p0', 0))
+            m['p1_time'].append(game.get('time_p1', 0))
+            m['p0_repetitions'].append(game.get('repetitions_p0', 0))
+            m['p1_repetitions'].append(game.get('repetitions_p1', 0))
+            
+            winner = game.get('winner', -1)
+            if winner == 0:
+                m['p0_wins'] += 1
+            elif winner == 1:
+                m['p1_wins'] += 1
+            else:
+                m['draws'] += 1
+            
+            # [UPDATED - 22 Jan 2026] Use dedicated columns for end reason tracking
+            m['flag_captured'] += game.get('flag_captured', 0)
+            m['no_moves'] += game.get('no_valid_moves', 0)
+            m['stalemate'] += game.get('stalemate', 0)
+            m['max_turns'] += game.get('max_turns_reached', 0)
+        
+        # Create headers
+        headers = [
+            'Matchup',
+            'Model (P0)',
+            'Model (P1)',
+            'Total Games',
+            'P0 Wins',
+            'P1 Wins',
+            'Draws',
+            'P0 Win %',
+            'P1 Win %',
+            'Avg Turns',
+            'Avg Time P0 (s)',
+            'Avg Time P1 (s)',
+            'Avg Repetitions P0',
+            'Avg Repetitions P1',
+            'Flag Captured',
+            'No Moves',
+            'Stalemate',
+            'Max Turns Reached'
+        ]
+        ws.append(headers)
+        
+        # Style header
+        from openpyxl.styles import Font, PatternFill, Alignment
+        for cell in ws[1]:
+            cell.font = Font(bold=True, size=11, color="FFFFFF")
+            cell.fill = PatternFill(start_color="2E75B6", end_color="2E75B6", fill_type="solid")
+            cell.alignment = Alignment(horizontal="center")
+        
+        # Add matchup data
+        for matchup_key in sorted(matchups.keys()):
+            m = matchups[matchup_key]
+            
+            avg_turns = round(sum(m['total_turns']) / len(m['total_turns']), 1) if m['total_turns'] else 0
+            avg_time_p0 = round(sum(m['p0_time']) / len(m['p0_time']), 2) if m['p0_time'] else 0
+            avg_time_p1 = round(sum(m['p1_time']) / len(m['p1_time']), 2) if m['p1_time'] else 0
+            avg_reps_p0 = round(sum(m['p0_repetitions']) / len(m['p0_repetitions']), 1) if m['p0_repetitions'] else 0
+            avg_reps_p1 = round(sum(m['p1_repetitions']) / len(m['p1_repetitions']), 1) if m['p1_repetitions'] else 0
+            
+            p0_win_pct = round((m['p0_wins'] / m['total_games']) * 100, 1) if m['total_games'] > 0 else 0
+            p1_win_pct = round((m['p1_wins'] / m['total_games']) * 100, 1) if m['total_games'] > 0 else 0
+            
+            row = [
+                matchup_key,
+                m['model_p0'],
+                m['model_p1'],
+                m['total_games'],
+                m['p0_wins'],
+                m['p1_wins'],
+                m['draws'],
+                f"{p0_win_pct}%",
+                f"{p1_win_pct}%",
+                avg_turns,
+                avg_time_p0,
+                avg_time_p1,
+                avg_reps_p0,
+                avg_reps_p1,
+                m['flag_captured'],
+                m['no_moves'],
+                m['stalemate'],
+                m['max_turns']
+            ]
+            ws.append(row)
+        
+        # Adjust column widths
+        ws.column_dimensions['A'].width = 30
+        ws.column_dimensions['B'].width = 18
+        ws.column_dimensions['C'].width = 18
+        for col in ['D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R']:
+            ws.column_dimensions[col].width = 12
+    
+    def _update_summary_statistics_sheet_matchup_based(self, wb, all_games_data):
+        """[NEW - 22 Jan 2026] Generate Summary Statistics per MATCHUP"""
+        if "Summary Statistics" in wb.sheetnames:
+            wb.remove(wb["Summary Statistics"])
+        
+        ws2 = wb.create_sheet("Summary Statistics")
+        
+        if not all_games_data:
+            return
+        
+        # Group by matchup
+        matchups = {}
+        for game in all_games_data:
+            model_p0 = str(game.get('model_p0', 'Unknown'))
+            model_p1 = str(game.get('model_p1', 'Unknown'))
+            matchup_key = f"{model_p0} vs {model_p1}"
+            
+            if matchup_key not in matchups:
+                matchups[matchup_key] = {
+                    'games': 0,
+                    'p0_wins': 0,
+                    'p1_wins': 0,
+                    'draws': 0,
+                    'total_turns': [],
+                    'flag_captured': 0,
+                    'max_turns': 0,
+                    'no_moves': 0,
+                    'stalemate': 0
+                }
+            
+            m = matchups[matchup_key]
+            m['games'] += 1
+            m['total_turns'].append(game.get('turns', 0))
+            m['flag_captured'] += game.get('flag_captured', 0)
+            m['max_turns'] += game.get('max_turns_reached', 0)
+            m['no_moves'] += game.get('no_valid_moves', 0)
+            m['stalemate'] += game.get('stalemate', 0)
+            
+            winner = game.get('winner', -1)
+            if winner == 0:
+                m['p0_wins'] += 1
+            elif winner == 1:
+                m['p1_wins'] += 1
+            else:
+                m['draws'] += 1
+        
+        # Header
+        ws2.cell(1, 1, "📊 MATCHUP STATISTICS").font = Font(bold=True, size=14)
+        ws2.cell(1, 1).fill = PatternFill(start_color="4472C4", end_color="4472C4", fill_type="solid")
+        
+        # Table headers
+        headers = ["Matchup", "Games", "P0 Wins", "P1 Wins", "Draws", "Avg Turns", "Flag Captured", "Max Turns", "No Moves", "Stalemate"]
+        ws2.append([])
+        ws2.append(headers)
+        for cell in ws2[3]:
+            cell.font = Font(bold=True)
+            cell.fill = PatternFill(start_color="D9E1F2", end_color="D9E1F2", fill_type="solid")
+            cell.alignment = Alignment(horizontal="center")
+        
+        # Data rows
+        for matchup_key in sorted(matchups.keys()):
+            m = matchups[matchup_key]
+            avg_turns = round(sum(m['total_turns']) / len(m['total_turns']), 1) if m['total_turns'] else 0
+            
+            ws2.append([
+                matchup_key,
+                m['games'],
+                m['p0_wins'],
+                m['p1_wins'],
+                m['draws'],
+                avg_turns,
+                m['flag_captured'],
+                m['max_turns'],
+                m['no_moves'],
+                m['stalemate']
+            ])
+        
+        # Column widths
+        ws2.column_dimensions['A'].width = 35
+        for col in ['B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J']:
+            ws2.column_dimensions[col].width = 15
+    
+    def _create_charts_sheet_matchup_based(self, wb, all_games_data):
+        """[NEW - 22 Jan 2026] Create Charts per MATCHUP"""
+        try:
+            from openpyxl.chart import BarChart, PieChart, Reference
+            from openpyxl.chart.label import DataLabelList
+        except ImportError:
+            print("⚠️  Chart creation requires openpyxl with chart support")
+            return
+        
+        if "Charts" in wb.sheetnames:
+            wb.remove(wb["Charts"])
+        
+        ws3 = wb.create_sheet("Charts")
+        
+        if not all_games_data:
+            return
+        
+        # Group by matchup
+        matchups = {}
+        for game in all_games_data:
+            model_p0 = str(game.get('model_p0', 'Unknown'))
+            model_p1 = str(game.get('model_p1', 'Unknown'))
+            matchup_key = f"{model_p0} vs {model_p1}"
+            
+            if matchup_key not in matchups:
+                matchups[matchup_key] = {
+                    'p0_wins': 0,
+                    'p1_wins': 0,
+                    'draws': 0,
+                    'avg_turns': [],
+                    'flag_captured': 0
+                }
+            
+            m = matchups[matchup_key]
+            m['avg_turns'].append(game.get('turns', 0))
+            m['flag_captured'] += game.get('flag_captured', 0)
+            
+            winner = game.get('winner', -1)
+            if winner == 0:
+                m['p0_wins'] += 1
+            elif winner == 1:
+                m['p1_wins'] += 1
+            else:
+                m['draws'] += 1
+        
+        # Data table
+        ws3.append(["Matchup", "P0 Wins", "P1 Wins", "Draws", "Avg Turns", "Flag Captured"])
+        ws3[1][0].font = Font(bold=True)
+        
+        for matchup_key in sorted(matchups.keys()):
+            m = matchups[matchup_key]
+            avg_turns = round(sum(m['avg_turns']) / len(m['avg_turns']), 1) if m['avg_turns'] else 0
+            ws3.append([matchup_key, m['p0_wins'], m['p1_wins'], m['draws'], avg_turns, m['flag_captured']])
+        
+        # Create charts for each matchup
+        chart_row = 2
+        for matchup_key in sorted(matchups.keys()):
+            # Win comparison bar chart
+            chart1 = BarChart()
+            chart1.type = "col"
+            chart1.title = f"{matchup_key} - Win Comparison"
+            chart1.y_axis.title = "Number of Wins"
+            chart1.x_axis.title = "Result"
+            
+            data = Reference(ws3, min_col=2, max_col=4, min_row=chart_row, max_row=chart_row)
+            chart1.add_data(data, titles_from_data=False)
+            
+            chart1.dataLabels = DataLabelList()
+            chart1.dataLabels.showVal = True
+            
+            # Position charts in grid
+            chart_col = "H" if (chart_row - 2) % 2 == 0 else "P"
+            chart_row_pos = ((chart_row - 2) // 2) * 16 + 2
+            ws3.add_chart(chart1, f"{chart_col}{chart_row_pos}")
+            
+            chart_row += 1
+        
+        # Column widths
+        ws3.column_dimensions['A'].width = 35
+        for col in ['B', 'C', 'D', 'E', 'F']:
+            ws3.column_dimensions[col].width = 15
     
     def _update_summary_statistics_sheet(self, wb, all_games_ws):
         """[NEW - 21 Jan 2026] Generate comprehensive Summary Statistics sheet"""
@@ -657,6 +973,11 @@ class GameLogger:
         pie_chart.add_data(data, titles_from_data=True)
         pie_chart.set_categories(labels)
         
+        # Add data labels showing values
+        pie_chart.dataLabels = DataLabelList()
+        pie_chart.dataLabels.showVal = True
+        pie_chart.dataLabels.showCatName = True
+        
         ws3.add_chart(pie_chart, "H2")
         
         # === BAR CHART: Average Turns ===
@@ -670,6 +991,10 @@ class GameLogger:
         data = Reference(ws3, min_col=5, min_row=1, max_row=len(all_models) + 1)
         bar_chart1.add_data(data, titles_from_data=True)
         bar_chart1.set_categories(labels)
+        
+        # Add data labels showing values on bars
+        bar_chart1.dataLabels = DataLabelList()
+        bar_chart1.dataLabels.showVal = True
         
         ws3.add_chart(bar_chart1, "H18")
         
@@ -685,6 +1010,10 @@ class GameLogger:
         bar_chart2.add_data(data, titles_from_data=True)
         bar_chart2.set_categories(labels)
         
+        # Add data labels showing values on bars
+        bar_chart2.dataLabels = DataLabelList()
+        bar_chart2.dataLabels.showVal = True
+        
         ws3.add_chart(bar_chart2, "H34")
         
         # === BAR CHART: Win Rate ===
@@ -698,6 +1027,10 @@ class GameLogger:
         data = Reference(ws3, min_col=4, min_row=1, max_row=len(all_models) + 1)
         bar_chart3.add_data(data, titles_from_data=True)
         bar_chart3.set_categories(labels)
+        
+        # Add data labels showing values on bars
+        bar_chart3.dataLabels = DataLabelList()
+        bar_chart3.dataLabels.showVal = True
         
         ws3.add_chart(bar_chart3, "P2")
         
