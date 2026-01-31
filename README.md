@@ -78,6 +78,7 @@
 * Those curl commands does not fully function or need extra words if you are going to run those in Powershell, so just open another terminal with Linux(you can use Ubuntu as well), connect to ssh -L, and execute those curl commands, for checking and pulling LLMs.
 * You can kill the server with `kill $(cat /scratch/{user}/ollama_serve.pid)` or `pkill -f "/scratch/{user}/ollama_bin/ollama serve"`.
 * When you have ConnectError: [WinError 10061], try `$env:OLLAMA_HOST = "http://127.0.0.1:{your_host}"` to set Ollama host as your address as well.
+* If there is only few memories allowed in the server, please delete the models, which you do not use anymore with this command: `curl -X DELETE http://127.0.0.1:{your_host}/api/delete -H 'Content-Type: application/json' -d '{"model":"{model_name}"}'`
 
 ## Dataset and prompt optimization
 
