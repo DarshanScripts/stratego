@@ -1,5 +1,18 @@
-# stratego/benchmarking/run_benchmark.py
+"""Benchmark execution for evaluating Stratego agents.
 
+This module orchestrates benchmark runs by executing multiple games
+between agents and collecting comprehensive performance metrics.
+
+Metrics tracked:
+    - Win/loss/draw rates
+    - Average turns per game
+    - Invalid move frequency
+    - Repetition patterns
+    - Flag capture statistics
+
+Results are saved to CSV files and can be used for agent comparison
+and performance analysis.
+"""
 from .run_game import run_game
 from .metrics import init_metrics, update_metrics, summarize
 from .csv_logger import create_benchmark_csv, write_summary_csv

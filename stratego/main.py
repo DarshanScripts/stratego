@@ -1,9 +1,31 @@
+"""Stratego Game - Main CLI Entry Point.
+
+This module provides the command-line interface for running Stratego games
+with LLM-based agents. It handles game initialization, move processing,
+logging, and post-game analysis.
+
+Features:
+- Multiple environment variants (Standard, Duel, Custom board sizes)
+- LLM agent integration (Ollama, HuggingFace)
+- Comprehensive game logging and metrics tracking
+- Automatic prompt optimization based on game outcomes
+- Dataset generation for model training
+
+Usage:
+    python -m stratego.main --p0 ollama:model1 --p1 ollama:model2
+    
+See README.md for detailed configuration options.
+"""
 import argparse
 import os
 import re
 import time
 import random
-# from stratego.prompt_optimizer import improve_prompt
+from stratego.config import (
+    DEFAULT_TEMPERATURE, MAX_AGENT_ATTEMPTS, DEFAULT_NUM_PREDICT,
+    STALLING_WARNING_TURN, CRITICAL_WARNING_TURN, MAX_MOVE_HISTORY,
+    ANALYSIS_MODEL, DEFAULT_DATASET_REPO
+)
 from stratego.env.stratego_env import StrategoEnv
 from stratego.prompts import get_prompt_pack
 from stratego.utils.parsing import extract_board_block_lines, extract_legal_moves, extract_forbidden
@@ -17,27 +39,38 @@ from stratego.datasets import auto_push_after_game
 
 #Revised to set temperature(13 Nov 2025)
 def build_agent(spec: str, prompt_name: str):
-    """ 
-    Creates and configures an AI agent based on the input string.
-    Example spec: 'ollama:phi3:3.8b'
+    """Create and configure an AI agent based on specification string.
+    
+    Args:
+        spec: Agent specification in format 'provider:model_name'
+              Examples: 'ollama:phi3:3.8b', 'hf:gpt2'
+        prompt_name: Name of prompt preset to use (e.g., 'base', 'concise')
+    
+    Returns:
+        AgentLike: Configured agent instance ready for gameplay
+    
+    Raises:
+        ValueError: If spec format is invalid or provider is unknown
+    
+    Supported Providers:
+        - ollama: Local Ollama models with temperature control
+        - hf: HuggingFace models with GPU acceleration
     """
     kind, name = spec.split(":", 1)  # Split string to get model type and name
     
     if kind == "ollama":
         from stratego.models.ollama_model import OllamaAgent
-        # Define the temperature value explicitly
-        AGENT_TEMPERATURE = 0.2
         
-        # Create the Ollama agent
+        # Create the Ollama agent with configured defaults
         agent = OllamaAgent(
             model_name=name, 
-            temperature=AGENT_TEMPERATURE, 
-            num_predict=128,  # Allow enough tokens for a complete move response
-            prompt_pack=get_prompt_pack(prompt_name) # Load strategy prompt
+            temperature=DEFAULT_TEMPERATURE, 
+            num_predict=DEFAULT_NUM_PREDICT,
+            prompt_pack=get_prompt_pack(prompt_name)
         )
         
         # Store temperature for logging
-        agent.temperature = AGENT_TEMPERATURE
+        agent.temperature = DEFAULT_TEMPERATURE
         
         return agent
     if kind == "hf":
@@ -46,12 +79,40 @@ def build_agent(spec: str, prompt_name: str):
     raise ValueError(f"Unknown agent spec: {spec}")
 
 def print_board(observation: str, size: int = 10):
+    """Extract and display the game board from observation text.
+    
+    Args:
+        observation: Full game observation string containing board state
+        size: Board dimensions (NxN). Default is 10 for standard Stratego.
+              Use 6 for duel mode or custom sizes for custom games.
+    
+    The function searches for the board header pattern and extracts the
+    appropriate number of lines to display the complete board state.
+    """
     block = extract_board_block_lines(observation, size)
     if block:
         print("\n".join(block))
 
-# --- Main Command Line Interface (CLI) ---
 def cli():
+    """Main command-line interface for Stratego game execution.
+    
+    This function orchestrates the entire game flow:
+    1. Parse command-line arguments
+    2. Initialize environment and agents
+    3. Run game loop with move processing and logging
+    4. Analyze game outcomes and update prompts
+    5. Sync data to remote repositories
+    
+    The function supports multiple game modes, automated multi-game runs,
+    and comprehensive logging for training data generation.
+    
+    Command-line arguments control:
+    - Player agents and models
+    - GPU memory allocation
+    - Environment variant and board size
+    - Logging settings
+    - Batch game execution
+    """
     DEFAULT_ENV = "Stratego-v0"
     DUEL_ENV = "Stratego-duel"
     CUSTOM_ENV = "Stratego-custom"
@@ -268,12 +329,11 @@ def cli():
             
                 # The agent (LLM) generates the action, retry a few times; fallback to available moves
                 action = ""
-                max_agent_attempts = 3
-                for attempt in range(max_agent_attempts):
+                for attempt in range(MAX_AGENT_ATTEMPTS):
                     action = current_agent(observation)
                     if action:
                         break
-                    print(f"[TURN {turn}] {model_name} failed to produce a move (attempt {attempt+1}/{max_agent_attempts}). Retrying...")
+                    print(f"[TURN {turn}] {model_name} failed to produce a move (attempt {attempt+1}/{MAX_AGENT_ATTEMPTS}). Retrying...")
 
                 if not action:
                     legal = extract_legal_moves(observation)
@@ -281,7 +341,7 @@ def cli():
                     legal_filtered = [m for m in legal if m not in forbidden] or legal
                     if legal_filtered:
                         action = random.choice(legal_filtered)
-                        print(f"[TURN {turn}] Fallback to random available move: {action}")
+                        print(f"[TURN {turn}] Agent failed after {MAX_AGENT_ATTEMPTS} attempts. Fallback to random move: {action}")
                     else:
                         print(f"[TURN {turn}] No legal moves available for fallback; ending game loop.")
                         # [FIXED - 21 Jan 2026] Set draw when no valid moves available
@@ -572,7 +632,7 @@ def cli():
                 csv_path=logger.path,
                 prompts_dir="stratego/prompts",
                 logs_dir=args.log_dir,
-                model_name="mistral:7b",  # Analysis model
+                model_name=ANALYSIS_MODEL,
                 models_used=[agents[0].model_name, agents[1].model_name],
                 game_duration_seconds=game_duration,
                 winner=winner,
@@ -583,7 +643,7 @@ def cli():
             print("\nSyncing game data to Hugging Face...")
             auto_push_after_game(
                 logs_dir=os.path.join(args.log_dir, "games"),
-                repo_id="STRATEGO-LLM-TRAINING/stratego",
+                repo_id=DEFAULT_DATASET_REPO,
             )
     
         # [NEW - 21 Jan 2026] Print summary after all games complete

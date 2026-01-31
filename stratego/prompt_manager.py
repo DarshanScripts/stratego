@@ -8,6 +8,7 @@ import json
 import shutil
 from datetime import datetime
 from typing import Optional
+from stratego.config import MAX_PROMPT_IMPROVEMENTS
 
 
 class PromptManager:
@@ -79,7 +80,7 @@ OUTPUT:
         return improvements
 
     @staticmethod
-    def merge_improvements(existing: list[str], new: list[str], limit: int = 20) -> list[str]:
+    def merge_improvements(existing: list[str], new: list[str], limit: int = MAX_PROMPT_IMPROVEMENTS) -> list[str]:
         """Deduplicate improvements while keeping order; cap length to avoid prompt bloat."""
         merged: list[str] = []
         seen = set()
