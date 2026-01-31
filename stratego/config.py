@@ -25,7 +25,7 @@ DEFAULT_REPEAT_PENALTY = 1.05
 DEFAULT_NUM_PREDICT = 128
 
 # Agent retry settings
-MAX_AGENT_ATTEMPTS = 4
+MAX_AGENT_ATTEMPTS = 3
 
 # ============================
 # Game Flow Configuration

@@ -5,6 +5,14 @@ import threading
 import time
 from typing import Callable, Dict, List, Optional, Tuple
 
+from stratego.config import (
+    CRITICAL_WARNING_TURN,
+    CUSTOM_ENV,
+    DEFAULT_ENV,
+    DUEL_ENV,
+    MAX_AGENT_ATTEMPTS,
+    STALLING_WARNING_TURN,
+)
 from stratego.env.stratego_env import StrategoEnv
 from stratego.main import build_agent
 from stratego.utils.attack_policy import (
@@ -106,13 +114,13 @@ def run_match(
     agent1 = build_agent(normalize_model(p1_model), prompt_name)
 
     if mode == "Original":
-        env_id = "Stratego-v0"
+        env_id = DEFAULT_ENV
         env = StrategoEnv(env_id=env_id)
     elif mode == "Duel":
-        env_id = "Stratego-duel"
+        env_id = DUEL_ENV
         env = StrategoEnv(env_id=env_id)
     else:
-        env_id = "Stratego-custom"
+        env_id = CUSTOM_ENV
         env = StrategoEnv(env_id=env_id, size=size)
 
     env.reset(num_players=2)
@@ -171,9 +179,9 @@ def run_match(
             "- If there are immobile positions not confirmed as Bombs, treat them as Flag candidates and press toward them.\n"
             "- Use probes to identify the Flag quickly; do not delay when Flag candidates exist.\n"
         )
-        if turn > 20:
+        if turn > STALLING_WARNING_TURN:
             obs += "\n\n[SYSTEM MESSAGE]: The game is stalling. You MUST ATTACK or ADVANCE immediately. Passive play is forbidden."
-        if turn > 50:
+        if turn > CRITICAL_WARNING_TURN:
             obs += "\n[CRITICAL]: STOP MOVING BACK AND FORTH. Pick a piece and move it FORWARD now."
         if max_turns:
             remaining_turns = max(max_turns - turn, 0)
@@ -186,7 +194,7 @@ def run_match(
             agent.set_move_history(move_history[player_id][-10:])
 
         action = ""
-        max_agent_attempts = 3
+        max_agent_attempts = MAX_AGENT_ATTEMPTS
         for _ in range(max_agent_attempts):
             action, error, aborted = _call_agent_with_abort(
                 agent,
