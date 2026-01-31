@@ -1,2 +1,0 @@
-# TODO: this code should enable checking prompt and find out which was not working and which was working well.
-# Also, with this Schema testing, it should able to load external prompt in json or yaml file to implement.

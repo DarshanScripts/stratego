@@ -107,14 +107,14 @@ def run_match(
 
     if mode == "Original":
         env_id = "Stratego-v0"
-        size = 10
+        env = StrategoEnv(env_id=env_id)
     elif mode == "Duel":
         env_id = "Stratego-duel"
-        size = 6
+        env = StrategoEnv(env_id=env_id)
     else:
         env_id = "Stratego-custom"
+        env = StrategoEnv(env_id=env_id, size=size)
 
-    env = StrategoEnv(env_id=env_id, size=size)
     env.reset(num_players=2)
 
     tracker = MoveTrackerClass()

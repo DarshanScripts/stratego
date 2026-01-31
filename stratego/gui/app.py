@@ -153,7 +153,7 @@ class StrategoGUI:
         }
         self._piece_images_raw = self._load_piece_images()
         self._piece_images: Dict[Tuple[str, int], ImageTk.PhotoImage] = {}
-        self._unknown_images_raw = self._load_unknown_images()
+        # self._unknown_images_raw = self._load_unknown_images()
         self._unknown_images: Dict[int, ImageTk.PhotoImage] = {}
         self._last_tokens: List[List[str]] = []
         self._last_owners: List[List[Optional[int]]] = []
@@ -580,14 +580,14 @@ class StrategoGUI:
                     images[(token, side)] = Image.open(path)
         return images
 
-    def _load_unknown_images(self) -> Dict[int, Image.Image]:
-        sprites_dir = Path(__file__).resolve().parent / "sprites"
-        images: Dict[int, Image.Image] = {}
-        for side in (0, 1):
-            path = sprites_dir / f"unknown_p{side}.png"
-            if path.exists():
-                images[side] = Image.open(path)
-        return images
+    # def _load_unknown_images(self) -> Dict[int, Image.Image]:
+    #     sprites_dir = Path(__file__).resolve().parent / "sprites"
+    #     images: Dict[int, Image.Image] = {}
+    #     for side in (0, 1):
+    #         path = sprites_dir / f"unknown_p{side}.png"
+    #         if path.exists():
+    #             images[side] = Image.open(path)
+    #     return images
 
     def _set_window_icon(self) -> None:
         path = Path(__file__).resolve().parent / "sprites" / "icon.png"
@@ -639,7 +639,7 @@ class StrategoGUI:
         self._board_image = ImageTk.PhotoImage(resized)
         self._refresh_lake_images(cell)
         self._refresh_piece_images(cell)
-        self._refresh_unknown_images(cell)
+        # self._refresh_unknown_images(cell)
         if self._board_bg_id is None:
             self._board_bg_id = self._board_canvas.create_image(
                 origin_x,
@@ -667,13 +667,13 @@ class StrategoGUI:
             resized = image.resize((cell, cell), Image.NEAREST)
             self._piece_images[key] = ImageTk.PhotoImage(resized)
 
-    def _refresh_unknown_images(self, cell: int) -> None:
-        if not self._unknown_images_raw:
-            return
-        self._unknown_images.clear()
-        for side, image in self._unknown_images_raw.items():
-            resized = image.resize((cell, cell), Image.NEAREST)
-            self._unknown_images[side] = ImageTk.PhotoImage(resized)
+    # def _refresh_unknown_images(self, cell: int) -> None:
+    #     if not self._unknown_images_raw:
+    #         return
+    #     self._unknown_images.clear()
+    #     for side, image in self._unknown_images_raw.items():
+    #         resized = image.resize((cell, cell), Image.NEAREST)
+    #         self._unknown_images[side] = ImageTk.PhotoImage(resized)
 
     def _detect_move(
         self,
