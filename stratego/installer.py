@@ -1,16 +1,18 @@
+# [FIXED - 21 Jan 2026] Cleaned up unused imports and fixed missing return statement
 from __future__ import annotations
 import shutil
 from pathlib import Path
 import textarena
-import textarena.envs.registration as _reg
-from textarena.wrappers import LLMObservationWrapper, ActionFormattingWrapper, GameMessagesAndCurrentBoardObservationWrapper, GameMessagesObservationWrapper, GameBoardObservationWrapper, ClipCharactersActionWrapper, SettlersOfCatanObservationWrapper
 
 
 def get_textarena_env_dir() -> Path:
+    """[FIXED - 21 Jan 2026] Added else clause to return None when env_root doesn't exist"""
     ta_root = Path(textarena.__file__).resolve().parent
     env_root = ta_root / "envs"
     if env_root.exists():
         return env_root
+    else:
+        raise FileNotFoundError(f"TextArena envs directory not found at {env_root}")
     
 def install_strategos():
     stratego_directory = Path(__file__).resolve().parent

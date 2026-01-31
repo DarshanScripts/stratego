@@ -7,6 +7,8 @@ import os
 import json
 import shutil
 from datetime import datetime
+from typing import Optional
+from stratego.config import MAX_PROMPT_IMPROVEMENTS
 
 
 class PromptManager:
@@ -78,7 +80,7 @@ OUTPUT:
         return improvements
 
     @staticmethod
-    def merge_improvements(existing: list[str], new: list[str], limit: int = 20) -> list[str]:
+    def merge_improvements(existing: list[str], new: list[str], limit: int = MAX_PROMPT_IMPROVEMENTS) -> list[str]:
         """Deduplicate improvements while keeping order; cap length to avoid prompt bloat."""
         merged: list[str] = []
         seen = set()
@@ -114,9 +116,9 @@ OUTPUT:
                 return f.read()
         return self.get_base_prompt()
     
-    def update_prompt(self, new_prompt: str, reason: str = "", models: list = None, 
-                       mistakes: list = None, game_duration_seconds: float = None,
-                       total_turns: int = None, winner: int = None):
+    def update_prompt(self, new_prompt: str, reason: str = "", models: Optional[list] = None,
+                       mistakes: Optional[list] = None, game_duration_seconds: Optional[float] = None,
+                       total_turns: Optional[int] = None, winner: Optional[int] = None):
         """
         Update the current prompt and log the change.
         
@@ -141,9 +143,9 @@ OUTPUT:
         # Log the update
         self._log_update(reason, new_prompt, models, mistakes, game_duration_seconds, total_turns, winner)
     
-    def _log_update(self, reason: str, prompt_text: str = "", models: list = None, 
-                    mistakes: list = None, game_duration_seconds: float = None,
-                    total_turns: int = None, winner: int = None):
+    def _log_update(self, reason: str, prompt_text: str = "", models: Optional[list] = None,
+                    mistakes: Optional[list] = None, game_duration_seconds: Optional[float] = None,
+                    total_turns: Optional[int] = None, winner: Optional[int] = None):
         """Log game and prompt update to history with full details."""
         history = []
         if os.path.exists(self.history_path):

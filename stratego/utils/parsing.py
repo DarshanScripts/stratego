@@ -1,3 +1,22 @@
+"""Observation text parsing utilities for Stratego game state.
+
+This module provides robust parsing functions to extract structured information
+from the TextArena observation strings, including:
+
+- Legal move extraction from 'Available Moves:' lines
+- Forbidden move detection from 'FORBIDDEN:' sections  
+- Board display extraction with auto-size detection
+- Observation filtering for LLM prompts
+- Thinking tag removal from model outputs
+
+All parsers handle various board sizes (4x4 to 10x10) and are resilient to
+formatting variations in the observation text.
+
+Examples:
+    legal_moves = extract_legal_moves(observation)
+    board_lines = extract_board_block_lines(observation, size=10)
+    forbidden = extract_forbidden(observation)
+"""
 import re
 from typing import Any, List, Sequence
 

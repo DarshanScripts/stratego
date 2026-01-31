@@ -36,7 +36,12 @@ BASE = PromptPack(
     ),
 )
 
-# TODO: write down proper concise and adaptive prompt which could be implemented to the game. 
+# TODO: Implement additional prompt presets:
+#       - 'concise': Minimal instructions for fast inference
+#       - 'adaptive': Dynamic prompt that adjusts based on game state
+#       - 'defensive': Focus on piece protection and safe moves
+#       - 'scout_heavy': Emphasize reconnaissance and information gathering
+#       See current_prompt.txt for the actively used prompt template 
 # You can refer my original base prompt from original code which I set here as BASE prompt.
 # Your prompts would be exported to all codes by using __init__.py.
 

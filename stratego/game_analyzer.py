@@ -294,8 +294,8 @@ def analyze_and_update_prompt(
     prompts_dir: str = "stratego/prompts",
     logs_dir: str = "logs",
     model_name: str = "mistral:7b",
-    models_used: List[str] = None,
-    game_duration_seconds: float = None,
+    models_used: Optional[List[str]] = None,
+    game_duration_seconds: Optional[float] = None,
     winner: Optional[int] = None,
     total_turns: int = 0
 ):
