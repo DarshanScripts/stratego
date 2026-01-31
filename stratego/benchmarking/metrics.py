@@ -46,7 +46,7 @@ def update_metrics(m, r):
             elif ("no legal" in reason_lower or
                   "no more movable pieces" in reason_lower or
                   "no moves" in reason_lower):
-                m["end_no_moves"] += 1
+                m["end_draw"] += 1
             elif "turn limit" in reason_lower:
                 m["end_turn_limit"] += 1
             elif "draw" in reason_lower or "repetition" in reason_lower or "stalemate" in reason_lower:

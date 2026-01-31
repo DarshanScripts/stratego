@@ -214,11 +214,6 @@ class StrategoCustomEnv(ta.Env):
                 player_id=winner,
                 reason=f"Player {winner} wins! Opponent eliminated."
             )
-        elif self.turn_count > 200:
-            self.state.set_winner(
-                player_id=-1,
-                reason="Turn limit reached (200)."
-            )
 
         # ------------------------------------------------------------------
         # 4. Finalize state & switch turn

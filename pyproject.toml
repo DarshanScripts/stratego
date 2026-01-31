@@ -1,12 +1,13 @@
 [project]
 name = "stratego"
-version = "0.0.1"
+version = "1.0.0"
 requires-python = ">=3.10"
 dependencies = [
   "textarena",
   "langchain-ollama",
   "langchain-core",
-  "pydantic>=2"
+  "pydantic>=2",
+  "Pillow"
 ]
 
 [build-system]
@@ -21,5 +22,7 @@ hf = ["transformers>=4.44", "accelerate", "torch", "hf_xet"]
 
 [project.scripts]
 stratego = "stratego.main:cli"
+gui = "stratego.gui.app:main"
+stratego-run = "stratego.gui.cli_runner:main"
 stratego-install-env = "stratego.installer:main"
 benchmark = "stratego.benchmarking.main_benchmark:main"

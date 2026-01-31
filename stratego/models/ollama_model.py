@@ -129,6 +129,7 @@ Output ONLY one legal move in the exact format [A0 B0]. Nothing else.
         self.initial_prompt = self.system_prompt
         # Setup Ollama client
         base_url = host or os.getenv("OLLAMA_HOST", "http://localhost:11434")
+        self.base_url = base_url.rstrip("/")
         model_kwargs = {
             "temperature": kwargs.pop("temperature", 0.1),
             "top_p": kwargs.pop("top_p", 0.9),
@@ -136,6 +137,7 @@ Output ONLY one legal move in the exact format [A0 B0]. Nothing else.
             "num_predict": kwargs.pop("num_predict", 24),
             **kwargs,
         }
+        self.model_kwargs = model_kwargs
         
         print("🚀 Connecting to Ollama at:", base_url)
         self.client = ChatOllama(model=model_name, base_url=base_url, model_kwargs=model_kwargs)
@@ -173,11 +175,12 @@ Output ONLY one legal move in the exact format [A0 B0]. Nothing else.
         """Send request directly to Ollama REST API (fixes Windows LangChain bug)."""
         try:
             response = requests.post(
-                "http://localhost:11434/api/generate",
+                f"{self.base_url}/api/generate",
                 json={
                     "model": self.model_name,
                     "prompt": prompt,
-                    "stream": False
+                    "stream": False,
+                    "options": self.model_kwargs,
                 },
                 timeout=300
             )
