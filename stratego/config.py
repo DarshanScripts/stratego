@@ -25,7 +25,7 @@ DEFAULT_REPEAT_PENALTY = 1.05
 DEFAULT_NUM_PREDICT = 128
 
 # Agent retry settings
-MAX_AGENT_ATTEMPTS = 3
+MAX_AGENT_ATTEMPTS = 4
 
 # ============================
 # Game Flow Configuration
@@ -52,7 +52,7 @@ ANALYSIS_MODEL = "mistral:7b"
 # ============================
 # Ollama Configuration
 # ============================
-DEFAULT_OLLAMA_HOST = "http://localhost:11435"
+DEFAULT_OLLAMA_HOST = "http://localhost:11434"
 
 # ============================
 # Dataset Configuration

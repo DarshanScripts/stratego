@@ -68,7 +68,6 @@ def cli():
     CUSTOM_ENV = "Stratego-custom"
     tracker = MoveTrackerClass()
     inferences = {0: OpponentInference(), 1: OpponentInference()}
-    gui = None
     p = argparse.ArgumentParser()
     p.add_argument("--p0", default="ollama:deepseek-r1:32b")
     p.add_argument("--p1", default="ollama:gemma3:1b")
@@ -86,12 +85,8 @@ def cli():
     p.add_argument("--game-id", default=None, help="Optional custom game id in CSV filename")
     p.add_argument("--size", type=int, default=10, help="Board size NxN")
     p.add_argument("--max_turns", type=int, default=200, help="Maximum turns before stopping. Default is 200.")
-    p.add_argument("--gui", action="store_true", help="Show a live GUI board window")
 
     args = p.parse_args()
-    if args.gui:
-        from stratego.utils.board_gui import BoardGUI
-        gui = BoardGUI(title="Stratego")
 
     #(13 Nov 2025) --- INTERACTIVE ENVIRONMENT SELECTION ---
     if args.env_id == DEFAULT_ENV:
@@ -191,8 +186,6 @@ def cli():
                 print_board(observation)
             else:
                 print_board(observation, args.size)
-            if gui:
-                gui.update_from_observation(observation, args.size)
             # Pass recent move history to agent
             current_agent.set_move_history(move_history[player_id][-10:])
             history_str = tracker.to_prompt_string(player_id)
