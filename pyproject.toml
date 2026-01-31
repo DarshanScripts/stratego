@@ -7,7 +7,8 @@ dependencies = [
   "langchain-ollama",
   "langchain-core",
   "pydantic>=2",
-  "Pillow"
+  "Pillow",
+  "openpyxl"
 ]
 
 [build-system]

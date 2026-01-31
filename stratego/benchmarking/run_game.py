@@ -2,6 +2,12 @@
 
 import random
 import textarena as ta
+from stratego.config import (
+    CRITICAL_WARNING_TURN,
+    CUSTOM_ENV,
+    MAX_AGENT_ATTEMPTS,
+    STALLING_WARNING_TURN,
+)
 from stratego.env.stratego_env import StrategoEnv
 from stratego.utils.game_move_tracker import GameMoveTracker as MoveTrackerClass
 from stratego.utils.move_processor import process_move
@@ -33,7 +39,7 @@ def get_last_prompt_observation(state, player_id):
 
 
 def run_game(agent0, agent1, size=6, seed=None, start_player=None, max_turns=200):
-    env = StrategoEnv(env_id="Stratego-custom", size=size)
+    env = StrategoEnv(env_id=CUSTOM_ENV, size=size)
     env.reset(num_players=2, seed=seed)
     if start_player in (0, 1):
         try:
@@ -96,9 +102,9 @@ def run_game(agent0, agent1, size=6, seed=None, start_player=None, max_turns=200
         if hasattr(agent, "set_move_history"):
             agent.set_move_history(move_history[pid][-10:])
 
-        if turns > 20:
+        if turns > STALLING_WARNING_TURN:
             obs += "\n\n[SYSTEM MESSAGE]: The game is stalling. You MUST ATTACK or ADVANCE immediately. Passive play is forbidden."
-        if turns > 50:
+        if turns > CRITICAL_WARNING_TURN:
             obs += "\n[CRITICAL]: STOP MOVING BACK AND FORTH. Pick a piece and move it FORWARD now."
         if max_turns:
             remaining_turns = max(max_turns - turns, 0)
@@ -107,7 +113,7 @@ def run_game(agent0, agent1, size=6, seed=None, start_player=None, max_turns=200
             obs += "\n[FORCE ATTACK]: No pieces have been captured in 10 turns. You MUST ATTACK an enemy piece now."
 
         action = ""
-        max_agent_attempts = 3
+        max_agent_attempts = MAX_AGENT_ATTEMPTS
         for _ in range(max_agent_attempts):
             action = agent(obs) if callable(agent) else agent.act(obs)
             if action:
@@ -128,7 +134,7 @@ def run_game(agent0, agent1, size=6, seed=None, start_player=None, max_turns=200
                 forced = choose_attack_move(attack_moves, prefer_low_rank=True)
                 if forced and forced != action:
                     action = forced
-            elif turns > 50 and legal_filtered:
+            elif turns > CRITICAL_WARNING_TURN and legal_filtered:
                 last_move = move_history[pid][-1]["move"] if move_history[pid] else ""
                 avoid_move = reverse_move(last_move) if last_move else None
                 if avoid_move and avoid_move in legal_filtered:

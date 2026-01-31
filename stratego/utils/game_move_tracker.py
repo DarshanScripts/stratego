@@ -1,7 +1,13 @@
-# stratego/memory_tracker.py
+"""Game move tracker for maintaining move history and generating prompt context.
+
+This module tracks moves for both players throughout the game and provides
+formatted history strings for inclusion in LLM prompts. It does NOT reveal
+piece identities, only events like captures, bombs, and flags.
+"""
 from __future__ import annotations
 import datetime
 from typing import List, Dict, Any, Optional
+from stratego.config import MAX_TRACKER_ENTRIES
 
 class GameMoveTracker:
     """
@@ -66,11 +72,10 @@ class GameMoveTracker:
         if not self.history:
             return "No previous moves have been played.\n"
 
-        # ➤ KEEP ONLY LAST 20 ENTRIES
-        MAX_HISTORY = 20
-        if len(self.history) > MAX_HISTORY:
-            # delete oldest until only 20 remain
-            self.history = self.history[-MAX_HISTORY:]
+        # Keep only recent entries to prevent prompt bloat
+        if len(self.history) > MAX_TRACKER_ENTRIES:
+            # Delete oldest entries until only MAX_TRACKER_ENTRIES remain
+            self.history = self.history[-MAX_TRACKER_ENTRIES:]
 
         lines = ["Game History (most recent last):"]
 

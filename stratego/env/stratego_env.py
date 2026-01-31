@@ -2,14 +2,18 @@ from typing import Optional
 import textarena as ta
 
 class StrategoEnv:
+    """Wrapper for TextArena Stratego environment with multi-variant support.
+    
+    Supports multiple game modes:
+    - Stratego-v0: Standard 10x10 game
+    - Stratego-duel: 6x6 quick game
+    - Stratego-custom: Custom board sizes (4x4 to 9x9)
+    
+    Note: Environment registration and initialization is handled by the textarena package.
+    See backup folder for reference implementations of custom environments.
+    """
     def __init__(self, env_id: str = "Stratego-v0", size: int = 10, seed: Optional[int] = None):
-        # TODO: make various option to play
-        # Stratego original as default, if the user want to play duel mode, env_id = "Stratego-duel"
-        # rule_opts: e.g. board_size=10, etc.
-        # find a way to replace original init file, registration file and put more environment such as Stratego-duel
-        # in original textarena library by running or installing the program.
-        # You can see which file should be edited in backup folder.
-        # Don't worry, this should be done with Package managing team.
+        # Environment setup with dynamic board size support
         if size != 10:
             self.env = ta.make(env_id=env_id, size=size)
         else:

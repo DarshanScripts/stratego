@@ -1,4 +1,8 @@
-# import random
+"""Heuristic-based move selection strategy.
+
+Provides rule-based move selection for Stratego pieces based on
+piece types, board position, and tactical considerations.
+"""
 # from .base import Strategy
 
 # class RandomStrategy(BaseStrategy):

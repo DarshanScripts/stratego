@@ -1,10 +1,18 @@
-"""Move Processor: Utilities for parsing and analyzing moves.
+"""Move processing utilities for parsing and analyzing Stratego moves.
 
-Handles:
-- Move parsing from LLM output
-- Piece extraction from board
-- Board state serialization
+This module provides comprehensive move processing functionality including:
+- Move string parsing and validation
+- Board state extraction and piece identification
 - Move direction computation
+- Board state serialization for logging
+- Available moves formatting
+
+All functions are designed to work with the standard Stratego board format
+and coordinate system (A0-J9 for 10x10 board).
+
+Typical Usage:
+    details = process_move(action, game_state, observation)
+    logger.log_move(..., src=details.src_pos, dst=details.dst_pos)
 """
 
 import re

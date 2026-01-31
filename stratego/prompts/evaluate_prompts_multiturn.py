@@ -75,7 +75,8 @@ def generate_board_slices(num_rounds=5):
 # --- Évaluation multi-turn ---
 def evaluate_prompts_multiturn(model: str, num_rounds=5):
     boards = generate_board_slices(num_rounds)
-    scores = {p.name: [] for p in PROMPTS}
+    # [FIXED - 21 Jan 2026] Added type annotation to fix linting error
+    scores: dict[str, list[int]] = {p.name: [] for p in PROMPTS}
 
     print(f"\n Starting evaluation on {num_rounds} rounds with model: {model}\n")
 

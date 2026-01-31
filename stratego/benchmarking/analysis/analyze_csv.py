@@ -32,8 +32,9 @@ def analyze_benchmark_csv(csv_path: str):
 
     total_games = len(games)
 
-    wins = Counter()
-    terminations = Counter()
+    # [FIXED - 21 Jan 2026] Added type annotations for Counter objects
+    wins: Counter[str] = Counter()
+    terminations: Counter[str] = Counter()
 
     turns = []
     invalid_p0 = 0

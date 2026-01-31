@@ -1,3 +1,18 @@
+"""Opponent piece inference tracking for strategic gameplay.
+
+This module maintains publicly observable information about opponent pieces
+through move tracking and battle revelations. It helps agents make informed
+decisions based on revealed information without cheating.
+
+Key Features:
+- Track which enemy pieces have moved (thus are not Bombs/Flags)
+- Record revealed piece ranks from battles
+- Count captured enemy pieces by rank
+- Generate formatted summaries for LLM prompts
+
+The inference system only tracks information that would be available to a
+human player observing the game, maintaining fair gameplay.
+"""
 from __future__ import annotations
 
 from collections import Counter
@@ -5,10 +20,15 @@ from typing import Dict, Optional, Set
 
 
 class OpponentInference:
-    """
-    Track imperfect, publicly knowable information about the opponent.
-    - Enemy pieces that moved are not Bomb/Flag.
-    - Battle reveals ranks of involved pieces.
+    """Track imperfect, publicly knowable information about the opponent.
+    
+    This class maintains three types of information:
+    1. Mobile positions: Pieces that have moved (excludes Bomb/Flag)
+    2. Known positions: Pieces with revealed ranks from battles
+    3. Captured counts: Tally of eliminated enemy pieces by rank
+    
+    All information is derived from observable game events and does not
+    involve any cheating or hidden information access.
     """
 
     def __init__(self) -> None:
