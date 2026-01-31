@@ -1,0 +1,18 @@
+@startuml
+skinparam componentStyle rectangle
+
+component "StrategoGUI\n(app)" as GUI
+component "MatchController\n(cli_runner.run_match)" as CTRL
+component "StrategoEnv\n(stratego_env)" as ENV
+component "TextArena Env\n(ta.Env)" as TA
+component "Agent\n(Ollama/HF)" as AGENT
+node "Ollama Server\n(localhost:11434)" as OLL
+
+GUI  ..> CTRL : <<call>> start_game()
+CTRL ..> ENV  : <<call>> reset/get_observation/step
+ENV  ..> TA   : <<delegate>>
+CTRL ..> AGENT: <<call>> __call__(observation)
+AGENT ..> OLL  : <<HTTP>>
+CTRL ..> GUI  : <<callback>> on_state()
+
+@enduml

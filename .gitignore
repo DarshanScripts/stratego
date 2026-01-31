@@ -25,7 +25,8 @@ share/python-wheels/
 .installed.cfg
 *.egg
 MANIFEST
-
+logs/
+output/
 # PyInstaller
 #  Usually these files are written by a python script from a template
 #  before PyInstaller builds the exe, so as to inject date/other infos into it.
@@ -138,9 +139,10 @@ celerybeat.pid
 .env
 .envrc
 .venv
-env/
+# env/
+# Since we are editing env file of Stratego game, disabled gitignore of env folder.
 venv/
-ENV/
+# ENV/
 env.bak/
 venv.bak/
 
@@ -205,3 +207,9 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+
+logs/
+game_summaries.json
+
+stratego/prompts/current_prompt.txt
